@@ -4,6 +4,7 @@ from datetime import datetime
 from sqlalchemy.orm import Session
 from database.models.content import Task, TaskVariant, TaskGenerator, LessonTask
 from database.models.progress import TaskAttempt
+from services.statistics_service import StatisticsService
 
 class TaskService:
     def __init__(self, db: Session):
@@ -275,4 +276,11 @@ class TaskService:
         )
         self.db.add(attempt)
         self.db.commit()
+        stats_svc = StatisticsService(self.db)
+        stats_svc.update_topic_stats(
+            user_id=user_id,
+            topic_tags=task.topic_tags,
+            is_correct=is_correct,
+            task_type=task.type
+        )
         return attempt

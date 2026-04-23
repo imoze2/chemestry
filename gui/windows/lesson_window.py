@@ -11,8 +11,14 @@ from services.lesson_service import LessonService
 from services.task_service import TaskService
 from services.progress_service import ProgressService
 from gui.widgets.task_widgets import create_task_widget
+from gui.widgets.molecule_widget import MoleculeWidget
 from database.models.content import LessonVersion
 from database.models.progress import TaskAttempt, UserLessonProgress
+from services.currency_service import CurrencyService
+from services.achievement_service import AchievementService
+from services.challenge_service import ChallengeService
+from services.leaderboard_service import LeaderboardService
+from services.statistics_service import StatisticsService
 
 
 class LessonWindow(QWidget):
@@ -114,7 +120,11 @@ class LessonWindow(QWidget):
                         error_label = QLabel(f"Изображение не найдено: {block['src']}")
                         error_label.setStyleSheet("color: red;")
                         content_layout.addWidget(error_label)
-                # Здесь можно добавить другие типы блоков (анимации и т.д.)
+                elif block['type'] == 'molecule':
+                    molecule_view = MoleculeWidget()
+                    molecule_view.load_from_data(block['data'])
+                    molecule_view.setFixedSize(300, 200)
+                    content_layout.addWidget(molecule_view)
 
         content_layout.addStretch()
         content_widget.setLayout(content_layout)
@@ -274,14 +284,65 @@ class LessonWindow(QWidget):
             TaskAttempt.lesson_progress_id == lesson_progress.id,
             TaskAttempt.is_correct == True
         ).count()
+        # Статистика по темам
+        stats_svc = StatisticsService(self.db)
+        for lesson_task, task in self.lesson_tasks:
+            # ищем последнюю попытку этого задания в рамках урока
+            last_attempt = self.db.query(TaskAttempt).filter(
+                TaskAttempt.user_id == self.user.id,
+                TaskAttempt.task_id == task.id,
+                TaskAttempt.lesson_progress_id == lesson_progress.id
+            ).order_by(TaskAttempt.created_at.desc()).first()
+            if last_attempt:
+                stats_svc.update_topic_stats(
+                    self.user.id,
+                    task.topic_tags,
+                    is_correct=last_attempt.is_correct,
+                    task_type=task.type
+                )
 
         percent = (completed_tasks / total_tasks) * 100
-        if percent >= 50:  # Условие >50%
+        if percent >= 50:
             lesson_progress.status = 'completed'
             lesson_progress.completed_at = func.now()
-            # Обновляем XP в треке
             track_progress.total_xp += self.active_version.xp_reward
             self.db.commit()
+
+            # ---------- Геймификация ----------
+            currency_svc = CurrencyService(self.db)
+            # Награда за урок: монеты = XP/2, кристаллы = XP/10
+            coins_earned = self.active_version.xp_reward // 2
+            crystals_earned = max(1, self.active_version.xp_reward // 10)
+            currency_svc.add_coins(self.user.id, coins_earned)
+            currency_svc.add_crystals(self.user.id, crystals_earned)
+
+            # Достижения
+            achievement_svc = AchievementService(self.db)
+            achievement_svc.check_and_award(self.user.id, 'complete_lesson', {
+                'track_id': self.track.id,
+                'lesson_id': self.lesson.id,
+                'score_percent': percent
+            })
+            achievement_svc.check_and_award(self.user.id, 'count_tasks', {
+                'count': completed_tasks
+            })
+
+            # Челленджи
+            challenge_svc = ChallengeService(self.db)
+            challenge_svc.update_progress(self.user.id, 'complete_lesson', 1)
+
+            # Лидерборды
+            lb_svc = LeaderboardService(self.db)
+            lb_svc.update_entry(self.user.id, 'xp_total', self.active_version.xp_reward)
+            lb_svc.update_entry(self.user.id, 'xp_weekly', self.active_version.xp_reward)
+            lb_svc.update_entry(self.user.id, 'tasks_completed', completed_tasks)
+
+
+            # Статистика тем (из тегов заданий)
+            stats_svc = StatisticsService(self.db)
+            for lesson_task, task in self.lesson_tasks:
+                stats_svc.update_topic_stats(self.user.id, task.topic_tags, is_correct=...)
+            
             QMessageBox.information(self, "Урок завершён", f"Урок пройден! Получено {self.active_version.xp_reward} XP.")
             self.back_to_lessons()
         else:

@@ -96,6 +96,12 @@ class MainMenuWindow(QWidget):
     def open_settings(self):
         print("Открыть настройки")
 
+    def open_reference(self):
+        from gui.windows.reference_window import ReferenceWindow
+        self.ref_window = ReferenceWindow(self.user, self.db_session)
+        self.ref_window.show()
+        self.close()
+
     def logout(self):
         from gui.windows.login_window import LoginWindow
         self.login_window = LoginWindow(self.db_session)
