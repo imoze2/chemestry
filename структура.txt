@@ -1,0 +1,3444 @@
+--------------------------------------------------------
+В папке проекта такая архитектура:
+```0.0.Diploma2/
+- database/
+-- models/
+---- __init__.py
+---- content.py
+---- gamification.py
+---- progress.py
+---- reference.py
+---- user.py
+-- db.py
+-- init_db.py
+-- seed.py
+- gui/
+-- styles/
+-- widgets/
+---- task_widgets.py
+-- windows/
+---- friends_window.py
+---- lesson_list_window.py
+---- lesson_window.py
+---- login_window.py
+---- main_window.py
+---- profile_window.py
+---- register_window.py
+---- track_selection_window.py
+- services/
+-- auth_service.py
+-- friends_service.py
+-- lesson_service.py
+-- progress_service.py
+-- task_service.py
+-- track_service.py
+- main.py
+- profile.png
+```
+
+database/models/__init__.py ```
+# database/models/__init__.py
+from .user import (
+    User, Friendship, UserCurrency, ItemType, ShopItem, UserInventory, UserShowcase
+)
+from .content import (
+    Track, Lesson, LessonVersion, Theory, LessonTheory,
+    TaskGenerator, TaskPool, Task, TaskVariant, LessonTask
+)
+from .progress import (
+    UserTrackProgress, UserLessonProgress, TaskAttempt, UserTopicStats
+)
+from .gamification import (
+    Achievement, UserAchievement, Challenge, UserChallenge,
+    LeaderboardCategory, LeaderboardEntry
+)
+from .reference import (
+    ReferenceArticle, ReferenceArticleRelation, ReferenceSearchIndex
+)
+
+# Список всех моделей для Alembic или create_all
+__all__ = [
+    "User", "Friendship", "UserCurrency", "ItemType", "ShopItem", "UserInventory", "UserShowcase",
+    "Track", "Lesson", "LessonVersion", "Theory", "LessonTheory",
+    "TaskGenerator", "TaskPool", "Task", "TaskVariant", "LessonTask",
+    "UserTrackProgress", "UserLessonProgress", "TaskAttempt", "UserTopicStats",
+    "Achievement", "UserAchievement", "Challenge", "UserChallenge",
+    "LeaderboardCategory", "LeaderboardEntry",
+    "ReferenceArticle", "ReferenceArticleRelation", "ReferenceSearchIndex",
+]
+```
+
+database/models/content.py ```
+# database/models/content.py
+from sqlalchemy import (
+    Column, Integer, String, DateTime, Boolean, Text, ForeignKey, UniqueConstraint, CheckConstraint
+)
+from sqlalchemy.dialects.postgresql import JSONB, ARRAY
+from sqlalchemy.sql import func
+from sqlalchemy.orm import relationship
+from database.db import Base
+
+
+class Track(Base):
+    __tablename__ = "tracks"
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String(100), nullable=False)
+    description = Column(Text)
+    is_published = Column(Boolean, default=False)
+    created_at = Column(DateTime, server_default=func.now())
+
+    lessons = relationship("Lesson", back_populates="track", cascade="all, delete-orphan", order_by="Lesson.order_index")
+    user_progresses = relationship("UserTrackProgress", back_populates="track")
+
+
+class Lesson(Base):
+    __tablename__ = "lessons"
+    __table_args__ = (
+        UniqueConstraint("track_id", "order_index", name="unique_lesson_order"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    track_id = Column(Integer, ForeignKey("tracks.id", ondelete="CASCADE"), nullable=False)
+    order_index = Column(Integer, nullable=False)
+
+    track = relationship("Track", back_populates="lessons")
+    versions = relationship("LessonVersion", back_populates="lesson", cascade="all, delete-orphan")
+    theory_links = relationship("LessonTheory", back_populates="lesson", cascade="all, delete-orphan")
+    task_links = relationship("LessonTask", back_populates="lesson", cascade="all, delete-orphan")
+    user_progresses = relationship("UserLessonProgress", back_populates="lesson")
+
+
+class LessonVersion(Base):
+    __tablename__ = "lesson_versions"
+
+    id = Column(Integer, primary_key=True)
+    version_of = Column(Integer, ForeignKey("lessons.id"), nullable=False)
+    title = Column(String(200), nullable=False)
+    estimated_time = Column(Integer)  # в минутах
+    xp_reward = Column(Integer, default=10)
+    version_number = Column(Integer, default=1)
+    created_at = Column(DateTime, server_default=func.now())
+    is_active = Column(Boolean, default=True)
+    replaced_by = Column(Integer, ForeignKey("lesson_versions.id"))
+
+    lesson = relationship("Lesson", back_populates="versions")
+    replaced_by_version = relationship("LessonVersion", remote_side=[id])
+    user_progresses = relationship("UserLessonProgress", back_populates="version")
+
+
+class Theory(Base):
+    __tablename__ = "theory"
+
+    id = Column(Integer, primary_key=True)
+    data = Column(JSONB, nullable=False)  # структура теории (текст, изображения, анимации)
+    topic_tags = Column(ARRAY(Text))
+    estimated_time = Column(Integer)  # минут на чтение
+
+    lesson_links = relationship("LessonTheory", back_populates="theory")
+
+
+class LessonTheory(Base):
+    __tablename__ = "lesson_theory"
+    __table_args__ = (
+        UniqueConstraint("lesson_id", "theory_id", "order_index", name="unique_lesson_theory_order"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    lesson_id = Column(Integer, ForeignKey("lessons.id", ondelete="CASCADE"), nullable=False)
+    theory_id = Column(Integer, ForeignKey("theory.id", ondelete="CASCADE"), nullable=False)
+    order_index = Column(Integer, nullable=False)
+    is_required = Column(Boolean, default=True)
+
+    lesson = relationship("Lesson", back_populates="theory_links")
+    theory = relationship("Theory", back_populates="lesson_links")
+
+
+class TaskGenerator(Base):
+    __tablename__ = "task_generators"
+
+    id = Column(Integer, primary_key=True)
+    type = Column(String(30), nullable=False)  # напр. 'balance_equation', 'calculation'
+    template_data = Column(JSONB, nullable=False)  # шаблон для генерации
+    difficulty = Column(Integer, CheckConstraint("difficulty BETWEEN 1 AND 5"))
+    topic_tags = Column(ARRAY(Text))
+    created_at = Column(DateTime, server_default=func.now())
+
+    tasks = relationship("Task", back_populates="generator")
+
+
+class TaskPool(Base):
+    __tablename__ = "task_pools"
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String(100), nullable=False)
+    topic_tags = Column(ARRAY(Text))
+    difficulty = Column(Integer, CheckConstraint("difficulty BETWEEN 1 AND 5"))
+
+    tasks = relationship("Task", back_populates="pool")
+
+
+class Task(Base):
+    __tablename__ = "tasks"
+
+    id = Column(Integer, primary_key=True)
+    type = Column(String(20), nullable=False)  # match, choice, true_false, fill_blank, balance_equation, predict_product, classify, calculation, chain_transform, virtual_lab, find_error, open_experiment, puzzle, timed
+    source_type = Column(String(20))  # generated, static, manual
+    generator_id = Column(Integer, ForeignKey("task_generators.id"))
+    pool_id = Column(Integer, ForeignKey("task_pools.id"))
+
+    question_text = Column(Text, nullable=False)
+    data = Column(JSONB, nullable=False)  # данные для рендеринга задания
+
+    correct_answers = Column(JSONB, nullable=False)
+    scoring_type = Column(String(20), default='binary')  # binary, partial, proportional
+    max_score = Column(Integer, default=1)
+
+    hints = Column(ARRAY(JSONB))  # массив JSONB объектов с подсказками
+    max_hints_available = Column(Integer, default=3)
+
+    difficulty = Column(Integer, CheckConstraint("difficulty BETWEEN 1 AND 5"))
+    topic_tags = Column(ARRAY(Text))
+    estimated_time = Column(Integer)  # секунд на выполнение
+
+    created_at = Column(DateTime, server_default=func.now())
+
+    generator = relationship("TaskGenerator", back_populates="tasks")
+    pool = relationship("TaskPool", back_populates="tasks")
+    variants = relationship("TaskVariant", back_populates="base_task", cascade="all, delete-orphan")
+    lesson_links = relationship("LessonTask", back_populates="task")
+    attempts = relationship("TaskAttempt", back_populates="task")
+
+
+class TaskVariant(Base):
+    __tablename__ = "task_variants"
+
+    id = Column(Integer, primary_key=True)
+    base_task_id = Column(Integer, ForeignKey("tasks.id", ondelete="CASCADE"), nullable=False)
+    variant_data = Column(JSONB, nullable=False)  # конкретные значения для варианта
+    correct_answer = Column(JSONB, nullable=False)
+    usage_count = Column(Integer, default=0)
+
+    base_task = relationship("Task", back_populates="variants")
+    attempts = relationship("TaskAttempt", back_populates="variant")
+
+
+class LessonTask(Base):
+    __tablename__ = "lesson_tasks"
+    __table_args__ = (
+        UniqueConstraint("lesson_id", "task_id", "order_index", name="unique_lesson_task_order"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    lesson_id = Column(Integer, ForeignKey("lessons.id", ondelete="CASCADE"), nullable=False)
+    task_id = Column(Integer, ForeignKey("tasks.id", ondelete="CASCADE"), nullable=False)
+    order_index = Column(Integer, nullable=False)
+    is_required = Column(Boolean, default=True)
+
+    lesson = relationship("Lesson", back_populates="task_links")
+    task = relationship("Task", back_populates="lesson_links")
+```
+
+database/models/gamification.py ```
+# database/models/gamification.py
+from sqlalchemy import (
+    Column, Integer, String, DateTime, Boolean, ForeignKey, Text, Date, DECIMAL, CheckConstraint, UniqueConstraint
+)
+from sqlalchemy.dialects.postgresql import UUID, JSONB
+from sqlalchemy.sql import func
+from sqlalchemy.orm import relationship
+from database.db import Base
+
+
+class Achievement(Base):
+    __tablename__ = "achievements"
+
+    id = Column(Integer, primary_key=True)
+    code = Column(String(50), unique=True, nullable=False)
+    name = Column(String(100), nullable=False)
+    description = Column(Text)
+    icon_url = Column(String(255))
+
+    condition_type = Column(String(30))  # streak, count_tasks, count_topics, accuracy, complete_track, collect_items, spend_currency
+    condition_data = Column(JSONB, nullable=False)
+
+    xp_reward = Column(Integer, default=0)
+    coins_reward = Column(Integer, default=0)
+    crystals_reward = Column(Integer, default=0)
+    item_reward_id = Column(Integer, ForeignKey("item_types.id"))
+
+    is_hidden = Column(Boolean, default=False)
+
+    item_reward = relationship("ItemType", foreign_keys=[item_reward_id], overlaps="reward_for_achievements")
+    user_achievements = relationship("UserAchievement", back_populates="achievement")
+
+
+class UserAchievement(Base):
+    __tablename__ = "user_achievements"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    achievement_id = Column(Integer, ForeignKey("achievements.id", ondelete="CASCADE"), nullable=False)
+    unlocked_at = Column(DateTime, server_default=func.now())
+    shown_to_user = Column(Boolean, default=False)
+
+    user = relationship("User", back_populates="achievements")
+    achievement = relationship("Achievement", back_populates="user_achievements")
+
+
+class Challenge(Base):
+    __tablename__ = "challenges"
+
+    id = Column(Integer, primary_key=True)
+    type = Column(String(20))  # daily, weekly, monthly
+    title = Column(String(100), nullable=False)
+    description = Column(Text)
+    condition_type = Column(String(30))
+    condition_data = Column(JSONB)
+    reward_coins = Column(Integer, default=0)
+    reward_crystals = Column(Integer, default=0)
+    xp_bonus = Column(Integer, default=0)
+    valid_from = Column(Date)
+    valid_until = Column(Date)
+    is_active = Column(Boolean, default=True)
+
+    user_challenges = relationship("UserChallenge", back_populates="challenge")
+
+
+class UserChallenge(Base):
+    __tablename__ = "user_challenges"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    challenge_id = Column(Integer, ForeignKey("challenges.id", ondelete="CASCADE"), nullable=False)
+    progress_current = Column(Integer, default=0)
+    progress_target = Column(Integer)
+    is_completed = Column(Boolean, default=False)
+    completed_at = Column(DateTime)
+    reward_claimed = Column(Boolean, default=False)
+    created_at = Column(DateTime, server_default=func.now())
+
+    user = relationship("User", back_populates="challenges")
+    challenge = relationship("Challenge", back_populates="user_challenges")
+
+
+class LeaderboardCategory(Base):
+    __tablename__ = "leaderboard_categories"
+
+    id = Column(Integer, primary_key=True)
+    code = Column(String(50), unique=True, nullable=False)
+    name = Column(String(100), nullable=False)
+    metric_type = Column(String(30))  # xp_daily, xp_weekly, xp_monthly, xp_total, tasks_completed, challenges_completed, accuracy_rate, current_streak, max_streak
+    scope = Column(String(20), default='global')  # global, friends
+    reset_period = Column(String(20))  # daily, weekly, monthly, never
+    is_active = Column(Boolean, default=True)
+
+    entries = relationship("LeaderboardEntry", back_populates="category")
+
+
+class LeaderboardEntry(Base):
+    __tablename__ = "leaderboard_entries"
+    __table_args__ = (
+        UniqueConstraint("category_id", "user_id", "period_start", name="unique_leaderboard_entry"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    category_id = Column(Integer, ForeignKey("leaderboard_categories.id"), nullable=False)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    period_start = Column(Date)
+    score = Column(DECIMAL(15,2), nullable=False)
+    rank = Column(Integer)
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    category = relationship("LeaderboardCategory", back_populates="entries")
+    user = relationship("User", back_populates="leaderboard_entries")
+```
+
+database/models/progress.py ```
+# database/models/progress.py
+from sqlalchemy import (
+    Column, Integer, String, DateTime, Boolean, ForeignKey, UniqueConstraint, Text, DECIMAL
+)
+from sqlalchemy.dialects.postgresql import UUID, JSONB
+from sqlalchemy.sql import func
+from sqlalchemy.orm import relationship
+from database.db import Base
+
+
+class UserTrackProgress(Base):
+    __tablename__ = "user_track_progress"
+    __table_args__ = (
+        UniqueConstraint("user_id", "track_id", name="unique_user_track"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    track_id = Column(Integer, ForeignKey("tracks.id", ondelete="CASCADE"), nullable=False)
+    status = Column(String(20), default='active')  # active, completed, paused, repeating
+    started_at = Column(DateTime, server_default=func.now())
+    completed_at = Column(DateTime)
+    is_repeating = Column(Boolean, default=False)
+    total_xp = Column(Integer, default=0)
+    current_lesson_index = Column(Integer, default=0)
+
+    user = relationship("User", back_populates="track_progresses")
+    track = relationship("Track", back_populates="user_progresses")
+    lesson_progresses = relationship("UserLessonProgress", back_populates="track_progress", cascade="all, delete-orphan")
+
+
+class UserLessonProgress(Base):
+    __tablename__ = "user_lesson_progress"
+    __table_args__ = (
+        UniqueConstraint("user_track_progress_id", "lesson_id", name="unique_user_lesson"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    user_track_progress_id = Column(Integer, ForeignKey("user_track_progress.id", ondelete="CASCADE"), nullable=False)
+    lesson_id = Column(Integer, ForeignKey("lessons.id", ondelete="CASCADE"), nullable=False)
+    version_id = Column(Integer, ForeignKey("lesson_versions.id"))
+    status = Column(String(20), default='locked')  # locked, available, in_progress, completed, skipped
+
+    theory_viewed = Column(Boolean, default=False)
+    theory_viewed_at = Column(DateTime)
+
+    tasks_completed = Column(Integer, default=0)
+    tasks_total = Column(Integer, default=0)
+    score_earned = Column(Integer, default=0)
+    score_total = Column(Integer, default=0)
+
+    started_at = Column(DateTime)
+    completed_at = Column(DateTime)
+    is_skipped = Column(Boolean, default=False)
+
+    track_progress = relationship("UserTrackProgress", back_populates="lesson_progresses")
+    lesson = relationship("Lesson", back_populates="user_progresses")
+    version = relationship("LessonVersion", back_populates="user_progresses")
+    task_attempts = relationship("TaskAttempt", back_populates="lesson_progress")
+
+
+class TaskAttempt(Base):
+    __tablename__ = "task_attempts"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    task_id = Column(Integer, ForeignKey("tasks.id", ondelete="CASCADE"), nullable=False)
+    variant_id = Column(Integer, ForeignKey("task_variants.id"))
+
+    user_answer = Column(JSONB, nullable=False)
+    is_correct = Column(Boolean)
+    score_earned = Column(Integer)
+    score_max = Column(Integer)
+
+    started_at = Column(DateTime)
+    completed_at = Column(DateTime)
+    time_spent = Column(Integer)  # в секундах
+
+    hints_used = Column(Integer, default=0)
+    hints_cost = Column(Integer, default=0)
+
+    lesson_progress_id = Column(Integer, ForeignKey("user_lesson_progress.id"))
+    attempt_number = Column(Integer)
+
+    created_at = Column(DateTime, server_default=func.now())
+
+    user = relationship("User", back_populates="task_attempts")
+    task = relationship("Task", back_populates="attempts")
+    variant = relationship("TaskVariant", back_populates="attempts")
+    lesson_progress = relationship("UserLessonProgress", back_populates="task_attempts")
+
+
+class UserTopicStats(Base):
+    __tablename__ = "user_topic_stats"
+    __table_args__ = (
+        UniqueConstraint("user_id", "topic_tag", name="unique_user_topic"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    topic_tag = Column(String(50), nullable=False)
+
+    total_attempts = Column(Integer, default=0)
+    correct_attempts = Column(Integer, default=0)
+
+    # Вычисляемое поле через свойство или гибридное свойство
+    # В SQLAlchemy это можно сделать через column_property или обычный @property
+    # Для хранения используем DECIMAL, но в БД это GENERATED столбец.
+    # Мы можем определить его как обычную колонку, но заполнять при обновлении.
+    accuracy_rate = Column(DECIMAL(5,2))
+
+    stats_by_task_type = Column(JSONB, default={})
+
+    current_streak = Column(Integer, default=0)
+    max_streak = Column(Integer, default=0)
+
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    user = relationship("User", back_populates="topic_stats")
+```
+
+database/models/reference.py ```
+# database/models/reference.py
+from sqlalchemy import (
+    Column, Integer, String, DateTime, ForeignKey, Text, UniqueConstraint
+)
+from sqlalchemy.dialects.postgresql import JSONB, ARRAY, TSVECTOR
+from sqlalchemy.sql import func
+from sqlalchemy.orm import relationship
+from database.db import Base
+
+
+class ReferenceArticle(Base):
+    __tablename__ = "reference_articles"
+
+    id = Column(Integer, primary_key=True)
+    title = Column(String(200), nullable=False)
+    content = Column(JSONB, nullable=False)
+    summary = Column(Text)
+
+    category = Column(String(50))
+    topic_tags = Column(ARRAY(Text))
+
+    search_keywords = Column(ARRAY(Text))
+    chemical_formulas = Column(ARRAY(Text))
+
+    required_lesson_id = Column(Integer, ForeignKey("lessons.id"))
+
+    difficulty_level = Column(Integer)  # 1-3
+
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, onupdate=func.now())
+
+    # связи с другими статьями
+    related_from = relationship(
+        "ReferenceArticleRelation",
+        foreign_keys="ReferenceArticleRelation.article_id",
+        back_populates="article",
+        cascade="all, delete-orphan"
+    )
+    related_to = relationship(
+        "ReferenceArticleRelation",
+        foreign_keys="ReferenceArticleRelation.related_article_id",
+        back_populates="related_article",
+        cascade="all, delete-orphan"
+    )
+    search_index = relationship("ReferenceSearchIndex", back_populates="article", uselist=False, cascade="all, delete-orphan")
+
+
+class ReferenceArticleRelation(Base):
+    __tablename__ = "reference_article_relations"
+    __table_args__ = (
+        UniqueConstraint("article_id", "related_article_id", name="unique_article_relation"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    article_id = Column(Integer, ForeignKey("reference_articles.id", ondelete="CASCADE"), nullable=False)
+    related_article_id = Column(Integer, ForeignKey("reference_articles.id", ondelete="CASCADE"), nullable=False)
+
+    article = relationship("ReferenceArticle", foreign_keys=[article_id], back_populates="related_from")
+    related_article = relationship("ReferenceArticle", foreign_keys=[related_article_id], back_populates="related_to")
+
+
+class ReferenceSearchIndex(Base):
+    __tablename__ = "reference_search_index"
+
+    id = Column(Integer, primary_key=True)
+    article_id = Column(Integer, ForeignKey("reference_articles.id", ondelete="CASCADE"), nullable=False)
+    search_vector = Column(TSVECTOR)
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    article = relationship("ReferenceArticle", back_populates="search_index")
+
+    # Индекс создадим отдельно через сырой SQL при инициализации БД
+```
+
+database/models/user.py ```
+# database/models/user.py
+import uuid
+from sqlalchemy import (
+    Column, Integer, String, DateTime, Date, Boolean, ForeignKey, CheckConstraint, UniqueConstraint, Text
+)
+from sqlalchemy.dialects.postgresql import UUID, ARRAY
+from sqlalchemy.sql import func
+from sqlalchemy.orm import relationship
+from database.db import Base
+
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    username = Column(String(32), unique=True, nullable=False)
+    email = Column(String(255), unique=True, nullable=False)
+    password_hash = Column(String(255), nullable=False)
+    avatar_url = Column(String(255))
+    created_at = Column(DateTime, server_default=func.now())
+    last_active = Column(DateTime)
+    current_streak = Column(Integer, default=0)
+    longest_streak = Column(Integer, default=0)
+    last_login_date = Column(Date)
+
+    # Relationships
+    friendships_initiated = relationship("Friendship", foreign_keys="Friendship.requester_id", back_populates="requester")
+    friendships_received = relationship("Friendship", foreign_keys="Friendship.addressee_id", back_populates="addressee")
+    currencies = relationship("UserCurrency", back_populates="user", uselist=False, cascade="all, delete-orphan")
+    inventory = relationship("UserInventory", back_populates="user", cascade="all, delete-orphan")
+    showcases = relationship("UserShowcase", back_populates="user", cascade="all, delete-orphan")
+    track_progresses = relationship("UserTrackProgress", back_populates="user", cascade="all, delete-orphan")
+    task_attempts = relationship("TaskAttempt", back_populates="user", cascade="all, delete-orphan")
+    topic_stats = relationship("UserTopicStats", back_populates="user", cascade="all, delete-orphan")
+    achievements = relationship("UserAchievement", back_populates="user", cascade="all, delete-orphan")
+    challenges = relationship("UserChallenge", back_populates="user", cascade="all, delete-orphan")
+    leaderboard_entries = relationship("LeaderboardEntry", back_populates="user", cascade="all, delete-orphan")
+
+
+class Friendship(Base):
+    __tablename__ = "friendships"
+    __table_args__ = (
+        CheckConstraint("requester_id <> addressee_id", name="check_self_friend"),
+        UniqueConstraint("requester_id", "addressee_id", name="unique_friendship"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    requester_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    addressee_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    status = Column(String(10), nullable=False)  # pending, accepted, blocked
+    created_at = Column(DateTime, server_default=func.now())
+
+    requester = relationship("User", foreign_keys=[requester_id], back_populates="friendships_initiated")
+    addressee = relationship("User", foreign_keys=[addressee_id], back_populates="friendships_received")
+
+
+class UserCurrency(Base):
+    __tablename__ = "user_currencies"
+
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    coins = Column(Integer, default=0, nullable=False)
+    crystals = Column(Integer, default=0, nullable=False)
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    user = relationship("User", back_populates="currencies")
+
+
+class ItemType(Base):
+    __tablename__ = "item_types"
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String(100), nullable=False)
+    category = Column(String(15), nullable=False)  # showcase, artifact, profile_theme, showcase_theme
+    description = Column(Text)
+    icon_url = Column(String(255))
+    max_stack = Column(Integer, default=1)
+    is_purchasable = Column(Boolean, default=True)
+
+    shop_items = relationship("ShopItem", back_populates="item_type")
+    inventories = relationship("UserInventory", back_populates="item_type")
+    reward_for_achievements = relationship("Achievement", foreign_keys="Achievement.item_reward_id")
+
+
+class ShopItem(Base):
+    __tablename__ = "shop_items"
+
+    id = Column(Integer, primary_key=True)
+    item_type_id = Column(Integer, ForeignKey("item_types.id"), nullable=False)
+    price_coins = Column(Integer)
+    price_crystals = Column(Integer)
+    required_level = Column(Integer, default=0)
+    is_limited = Column(Boolean, default=False)
+    available_from = Column(DateTime)
+    available_until = Column(DateTime)
+    is_active = Column(Boolean, default=True)
+
+    item_type = relationship("ItemType", back_populates="shop_items")
+
+
+class UserInventory(Base):
+    __tablename__ = "user_inventory"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    item_type_id = Column(Integer, ForeignKey("item_types.id"), nullable=False)
+    quantity = Column(Integer, default=1, nullable=False)
+    acquired_at = Column(DateTime, server_default=func.now())
+    is_equipped = Column(Boolean, default=False)
+    equipped_slot = Column(Integer)
+
+    user = relationship("User", back_populates="inventory")
+    item_type = relationship("ItemType", back_populates="inventories")
+    showcase_slots = relationship("UserShowcase", foreign_keys="UserShowcase.showcase_item_id")
+    artifact_slots = relationship("UserShowcase", foreign_keys="UserShowcase.artifact_item_id")
+
+
+class UserShowcase(Base):
+    __tablename__ = "user_showcases"
+    __table_args__ = (
+        UniqueConstraint("user_id", "showcase_item_id", "slot_number", name="unique_showcase_slot"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    showcase_item_id = Column(Integer, ForeignKey("user_inventory.id"), nullable=False)
+    slot_number = Column(Integer, nullable=False)
+    artifact_item_id = Column(Integer, ForeignKey("user_inventory.id"))
+
+    user = relationship("User", back_populates="showcases")
+    showcase_item = relationship("UserInventory", foreign_keys=[showcase_item_id], back_populates="showcase_slots")
+    artifact_item = relationship("UserInventory", foreign_keys=[artifact_item_id], back_populates="artifact_slots")
+```
+
+database/db.py ```
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker, declarative_base
+
+from dotenv import load_dotenv
+import os
+
+load_dotenv()
+
+DATABASE_URL = os.getenv("DATABASE_URL")
+
+engine = create_engine(
+    DATABASE_URL,
+    echo=False
+)
+
+SessionLocal = sessionmaker(
+    autocommit=False,
+    autoflush=False,
+    bind=engine
+)
+
+Base = declarative_base()
+```
+
+database/init_db.py ```
+# database/init_db.py
+import os
+
+from sqlalchemy import text
+
+import psycopg2
+from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
+from urllib.parse import urlparse
+
+from database.db import engine, Base
+from database.models import *  # импорт всех моделей для регистрации в Base.metadata
+
+
+def ensure_database_exists(db_url: str):
+    """Создаёт базу данных, если она не существует."""
+    url = urlparse(db_url)
+    db_name = url.path[1:]  # убираем слеш
+    user = url.username
+    password = url.password
+    host = url.hostname
+    port = url.port or 5432
+
+    # Подключаемся к служебной БД postgres
+    conn = psycopg2.connect(
+        dbname='postgres',
+        user=user,
+        password=password,
+        host=host,
+        port=port
+    )
+    conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
+    cur = conn.cursor()
+    cur.execute(f"SELECT 1 FROM pg_database WHERE datname = '{db_name}'")
+    exists = cur.fetchone()
+    if not exists:
+        cur.execute(f"CREATE DATABASE {db_name}")
+        print(f"База данных '{db_name}' создана.")
+    else:
+        print(f"База данных '{db_name}' уже существует.")
+    cur.close()
+    conn.close()
+
+def init_db():
+    ensure_database_exists(os.getenv("DATABASE_URL"))
+    # Создаём все таблицы, если их нет
+    Base.metadata.create_all(bind=engine)
+
+    # Создаём дополнительные индексы, которые SQLAlchemy не создаёт автоматически
+    with engine.connect() as conn:
+        # GIN индекс для полнотекстового поиска в справочнике
+        conn.execute(text("""
+            CREATE INDEX IF NOT EXISTS idx_reference_search
+            ON reference_search_index USING GIN(search_vector);
+        """))
+        conn.commit()
+
+if __name__ == "__main__":
+    init_db()
+    print("База данных инициализирована.")
+```
+
+database/seed.py ```
+# database/seed.py
+import json
+from database.db import SessionLocal
+from database.models.content import Track, Lesson, LessonVersion, Theory, LessonTheory, Task, LessonTask, TaskGenerator, TaskVariant
+from database.models.user import User
+from sqlalchemy.sql import func
+import uuid
+import random
+
+def seed_data():
+    db = SessionLocal()
+
+    # Проверим, есть ли уже треки
+    if db.query(Track).count() > 0:
+        print("Данные уже есть в БД, пропускаем заполнение.")
+        return
+
+    # 1. Создаём треки
+    track8 = Track(name="Химия 8 класс", description="Базовый курс химии для 8 класса", is_published=True)
+    track9 = Track(name="Химия 9 класс", description="Продвинутый курс для 9 класса", is_published=True)
+    db.add_all([track8, track9])
+    db.commit()
+
+    # 2. Уроки для 8 класса
+    lesson8_1 = Lesson(track_id=track8.id, order_index=0)
+    lesson8_2 = Lesson(track_id=track8.id, order_index=1)
+    db.add_all([lesson8_1, lesson8_2])
+    db.commit()
+
+    # 3. Версии уроков
+    ver8_1 = LessonVersion(
+        version_of=lesson8_1.id,
+        title="Введение. Вещества и их свойства",
+        estimated_time=30,
+        xp_reward=50,
+        version_number=1,
+        is_active=True
+    )
+    ver8_2 = LessonVersion(
+        version_of=lesson8_2.id,
+        title="Атомы и молекулы",
+        estimated_time=45,
+        xp_reward=75,
+        version_number=1,
+        is_active=True
+    )
+    db.add_all([ver8_1, ver8_2])
+    db.commit()
+
+    # 4. Теория
+    theory1 = Theory(
+        data=json.dumps({
+            "blocks": [
+                {"type": "text", "content": "Химия — наука о веществах, их свойствах и превращениях."},
+                {"type": "text", "content": "Вещества состоят из молекул, а молекулы — из атомов."},
+                {"type": "image", "src": "assets/atoms.png", "caption": "Модель атома"}
+            ]
+        }),
+        topic_tags=["введение", "вещества"],
+        estimated_time=15
+    )
+    theory2 = Theory(
+        data=json.dumps({
+            "blocks": [
+                {"type": "text", "content": "Атом — мельчайшая частица химического элемента."},
+                {"type": "text", "content": "Молекула — наименьшая частица вещества, обладающая его химическими свойствами."}
+            ]
+        }),
+        topic_tags=["атомы", "молекулы"],
+        estimated_time=20
+    )
+    db.add_all([theory1, theory2])
+    db.commit()
+
+    # 5. Связь теории с уроками
+    lt1 = LessonTheory(lesson_id=lesson8_1.id, theory_id=theory1.id, order_index=1, is_required=True)
+    lt2 = LessonTheory(lesson_id=lesson8_2.id, theory_id=theory2.id, order_index=1, is_required=True)
+    db.add_all([lt1, lt2])
+    db.commit()
+
+    # ---------- Создаём несколько генераторов для разных типов ----------
+    # Генератор для choice
+    gen_choice = TaskGenerator(
+        type='choice',
+        template_data={
+            "questions": [
+                {"text": "Какая частица является наименьшей частицей вещества?", 
+                 "options": ["Атом", "Молекула", "Электрон", "Ядро"], "correct_index": 1},
+                {"text": "Что такое валентность?", 
+                 "options": ["Число связей", "Масса атома", "Заряд ядра", "Число протонов"], "correct_index": 0},
+            ]
+        },
+        difficulty=2,
+        topic_tags=["вещество", "атомы"]
+    )
+    db.add(gen_choice)
+
+    # Генератор для balance_equation
+    gen_balance = TaskGenerator(
+        type='balance_equation',
+        template_data={
+            "equations": [
+                {"reactants": ["H2", "O2"], "products": ["H2O"], "coefficients": [2, 1, 2]},
+                {"reactants": ["Na", "Cl2"], "products": ["NaCl"], "coefficients": [2, 1, 2]},
+            ]
+        },
+        difficulty=3,
+        topic_tags=["уравнения"]
+    )
+    db.add(gen_balance)
+
+    # Генератор для calculation
+    gen_calc = TaskGenerator(
+        type='calculation',
+        template_data={
+            "formulas": [
+                {
+                    "params": {"mass": [10, 100], "molar_mass": [18, 100]},
+                    "question_template": "Вычислите количество вещества (моль), если масса вещества {mass} г, молярная масса {molar_mass} г/моль.",
+                    "expression": "mass / molar_mass",
+                    "tolerance": 0.01
+                }
+            ]
+        },
+        difficulty=4,
+        topic_tags=["расчеты"]
+    )
+    db.add(gen_calc)
+
+    db.commit()
+
+    # ---------- Создаём задания, привязанные к генераторам или со статическими вариантами ----------
+    tasks_data = [
+        # type, generator, static_variants (если не генератор)
+        {'type': 'choice', 'generator': gen_choice, 'max_score': 1, 'topic_tags': ['атомы']},
+        {'type': 'true_false', 'static_variants': [
+            {"variant_data": {"question_text": "Вода состоит из молекул H2O."}, "correct_answer": {"answer": True}},
+            {"variant_data": {"question_text": "Кислород — это металл."}, "correct_answer": {"answer": False}},
+        ], 'max_score': 1},
+        {'type': 'match', 'static_variants': [
+            {"variant_data": {"left_items": ["H2O", "CO2", "NaCl"], 
+                              "right_items": ["вода", "углекислый газ", "поваренная соль"]},
+             "correct_answer": {"matches": {"0": 0, "1": 1, "2": 2}}},
+        ]},
+        {'type': 'fill_blank', 'static_variants': [
+            {"variant_data": {"text": "Химическая формула воды — ______."}, "correct_answer": {"answer": "H2O"}},
+        ]},
+        {'type': 'balance_equation', 'generator': gen_balance},
+        {'type': 'predict_product', 'static_variants': [
+            {"variant_data": {"reactants": ["NaOH", "HCl"]}, "correct_answer": {"products": ["NaCl", "H2O"]}},
+        ]},
+        {'type': 'classify', 'static_variants': [
+            {"variant_data": {"item_name": "NaCl", "options": ["оксид", "кислота", "соль", "основание"]},
+             "correct_answer": {"class": "соль"}},
+        ]},
+        {'type': 'calculation', 'generator': gen_calc, 'max_score': 1, 'scoring_type': 'binary'},
+        {'type': 'chain_transform', 'static_variants': [
+            {"variant_data": {"starting_material": "CuO", "steps": [
+                {"reagent": "H2SO4", "product": "CuSO4"},
+                {"reagent": "Fe", "product": "Cu"}
+            ]},
+            "correct_answer": {"products": [["CuSO4"], ["Cu"]]}},
+        ]},
+        {'type': 'virtual_lab', 'static_variants': [
+            {"variant_data": {"name": "Реакция нейтрализации", "reagents": ["NaOH", "HCl"], 
+                              "procedure": "Смешайте растворы.", "observations": ["Выделение газа", "Изменение цвета", "Ничего"]},
+             "correct_answer": {"observation": "Ничего"}},
+        ]},
+        {'type': 'puzzle', 'static_variants': [
+            {"variant_data": {"clues": ["Самый лёгкий газ."]}, "correct_answer": {"answer": "водород"}},
+        ]},
+        {'type': 'timed', 'static_variants': [
+            {"variant_data": {"text": "Сколько протонов в атоме углерода?", "time_limit": 10},
+             "correct_answer": {"answer": "6"}},
+        ]},
+    ]
+
+    for td in tasks_data:
+        task = Task(
+            type=td['type'],
+            source_type='generated' if 'generator' in td else 'static',
+            generator_id=td.get('generator', None).id if 'generator' in td else None,
+            question_text=f"Задание типа {td['type']}",
+            data={},
+            correct_answers={},
+            scoring_type='binary' if not td['type'] == 'match' else 'partial',
+            max_score=td.get('max_score', 1),
+            topic_tags=td.get('topic_tags', []),
+        )
+        db.add(task)
+        db.flush()  # чтобы получить task.id
+
+        if 'static_variants' in td:
+            for var in td['static_variants']:
+                variant = TaskVariant(
+                    base_task_id=task.id,
+                    variant_data=var['variant_data'],
+                    correct_answer=var['correct_answer'],
+                )
+                db.add(variant)
+
+    db.commit()
+
+    # Привязываем задания к урокам (например, к первому уроку 8 класса)
+    lesson = db.query(Lesson).filter(Lesson.order_index == 0).first()
+    tasks = db.query(Task).all()
+    for i, t in enumerate(tasks):
+        lt = LessonTask(lesson_id=lesson.id, task_id=t.id, order_index=i, is_required=True)
+        db.add(lt)
+    db.commit()
+
+    # 8. Для 9 класса тоже что-то добавим
+    lesson9_1 = Lesson(track_id=track9.id, order_index=0)
+    db.add(lesson9_1)
+    db.commit()
+
+    ver9_1 = LessonVersion(
+        version_of=lesson9_1.id,
+        title="Периодический закон",
+        estimated_time=40,
+        xp_reward=80,
+        version_number=1,
+        is_active=True
+    )
+    db.add(ver9_1)
+    db.commit()
+
+    theory3 = Theory(
+        data=json.dumps({
+            "blocks": [
+                {"type": "text", "content": "Периодический закон Д.И. Менделеева..."}
+            ]
+        }),
+        topic_tags=["периодический_закон"],
+        estimated_time=25
+    )
+    db.add(theory3)
+    db.commit()
+    LessonTheory(lesson_id=lesson9_1.id, theory_id=theory3.id, order_index=1, is_required=True)
+    db.commit()
+
+    print("Тестовые данные успешно добавлены.")
+
+if __name__ == "__main__":
+    seed_data()
+```
+
+gui/widgets/task_widgets.py ```
+# gui/widgets/task_widgets.py (полностью)
+
+from PyQt6.QtWidgets import (
+    QWidget, QVBoxLayout, QLabel, QRadioButton, QButtonGroup,
+    QCheckBox, QLineEdit, QPushButton, QHBoxLayout, QComboBox,
+    QListWidget, QListWidgetItem, QTextEdit, QSpinBox, QGridLayout,
+    QMessageBox
+)
+from PyQt6.QtCore import pyqtSignal, QTimer
+import json
+
+class BaseTaskWidget(QWidget):
+    answer_submitted = pyqtSignal(dict)
+
+    def __init__(self, task, variant, parent=None):
+        super().__init__(parent)
+        self.task = task
+        self.variant = variant
+        self.variant_data = variant.variant_data or {}
+        if isinstance(self.variant_data, str):
+            self.variant_data = json.loads(self.variant_data)
+        self.init_ui()
+
+    def init_ui(self):
+        pass
+
+    def get_answer(self) -> dict:
+        raise NotImplementedError
+
+    def emit_answer(self):
+        self.answer_submitted.emit(self.get_answer())
+
+
+# ---------- Простые типы ----------
+class ChoiceTaskWidget(BaseTaskWidget):
+    def init_ui(self):
+        layout = QVBoxLayout()
+        self.label = QLabel(self.variant_data.get('question_text', self.task.question_text))
+        self.label.setWordWrap(True)
+        layout.addWidget(self.label)
+
+        self.group = QButtonGroup(self)
+        self.radio_buttons = []
+        options = self.variant_data.get('options', [])
+        for i, opt in enumerate(options):
+            rb = QRadioButton(opt)
+            self.group.addButton(rb, i)
+            layout.addWidget(rb)
+            self.radio_buttons.append(rb)
+
+        btn = QPushButton("Ответить")
+        btn.clicked.connect(self.emit_answer)
+        layout.addWidget(btn)
+        self.setLayout(layout)
+
+    def get_answer(self):
+        return {'answer': self.group.checkedId() if self.group.checkedId() != -1 else None}
+
+
+class TrueFalseTaskWidget(BaseTaskWidget):
+    def init_ui(self):
+        layout = QVBoxLayout()
+        self.label = QLabel(self.variant_data.get('question_text', self.task.question_text))
+        self.label.setWordWrap(True)
+        layout.addWidget(self.label)
+
+        self.group = QButtonGroup(self)
+        self.true_rb = QRadioButton("Верно")
+        self.false_rb = QRadioButton("Неверно")
+        self.group.addButton(self.true_rb, 1)
+        self.group.addButton(self.false_rb, 0)
+        layout.addWidget(self.true_rb)
+        layout.addWidget(self.false_rb)
+
+        btn = QPushButton("Ответить")
+        btn.clicked.connect(self.emit_answer)
+        layout.addWidget(btn)
+        self.setLayout(layout)
+
+    def get_answer(self):
+        return {'answer': self.true_rb.isChecked()}
+
+
+class MatchTaskWidget(BaseTaskWidget):
+    def init_ui(self):
+        import random
+        layout = QVBoxLayout()
+        layout.addWidget(QLabel("Сопоставьте элементы из левой колонки с правой:"))
+
+        grid = QGridLayout()
+        self.left_items = self.variant_data.get('left_items', [])
+        random.shuffle(self.left_items)
+        self.right_items = self.variant_data.get('right_items', [])
+        random.shuffle(self.right_items)
+        self.combos = []
+
+        for i, left in enumerate(self.left_items):
+            label = QLabel(left)
+            combo = QComboBox()
+            combo.addItem("Выберите...", None)
+            for j, right in enumerate(self.right_items):
+                combo.addItem(right, j)
+            grid.addWidget(label, i, 0)
+            grid.addWidget(combo, i, 1)
+            self.combos.append(combo)
+
+        layout.addLayout(grid)
+
+        btn = QPushButton("Ответить")
+        btn.clicked.connect(self.emit_answer)
+        layout.addWidget(btn)
+        self.setLayout(layout)
+
+    def get_answer(self):
+        matches = {}
+        for i, combo in enumerate(self.combos):
+            idx = combo.currentData()
+            if idx is not None:
+                matches[str(i)] = idx
+        return {'matches': matches}
+
+
+class FillBlankTaskWidget(BaseTaskWidget):
+    def init_ui(self):
+        layout = QVBoxLayout()
+        self.label = QLabel(self.variant_data.get('text', ''))
+        self.label.setWordWrap(True)
+        layout.addWidget(self.label)
+
+        self.input = QLineEdit()
+        self.input.setPlaceholderText("Введите пропущенное слово/формулу")
+        layout.addWidget(self.input)
+
+        btn = QPushButton("Ответить")
+        btn.clicked.connect(self.emit_answer)
+        layout.addWidget(btn)
+        self.setLayout(layout)
+
+    def get_answer(self):
+        return {'answer': self.input.text().strip()}
+
+
+# ---------- Химические типы ----------
+class BalanceEquationWidget(BaseTaskWidget):
+    def init_ui(self):
+        layout = QVBoxLayout()
+        reactants = ' + '.join(self.variant_data.get('reactants', []))
+        products = ' + '.join(self.variant_data.get('products', []))
+        self.equation_label = QLabel(f"{reactants} → {products}")
+        layout.addWidget(self.equation_label)
+
+        layout.addWidget(QLabel("Введите коэффициенты (через пробел):"))
+        self.coeff_input = QLineEdit()
+        layout.addWidget(self.coeff_input)
+
+        btn = QPushButton("Проверить")
+        btn.clicked.connect(self.emit_answer)
+        layout.addWidget(btn)
+        self.setLayout(layout)
+
+    def get_answer(self):
+        coeffs = self.coeff_input.text().strip().split()
+        return {'coefficients': [int(c) for c in coeffs] if coeffs else []}
+
+
+class PredictProductWidget(BaseTaskWidget):
+    def init_ui(self):
+        layout = QVBoxLayout()
+        reactants = ' + '.join(self.variant_data.get('reactants', []))
+        layout.addWidget(QLabel(f"Реагенты: {reactants}"))
+        layout.addWidget(QLabel("Предскажите продукты реакции:"))
+        self.input = QLineEdit()
+        self.input.setPlaceholderText("Например: NaCl, H2O")
+        layout.addWidget(self.input)
+
+        btn = QPushButton("Ответить")
+        btn.clicked.connect(self.emit_answer)
+        layout.addWidget(btn)
+        self.setLayout(layout)
+
+    def get_answer(self):
+        text = self.input.text().strip()
+        # Разделяем по '+' или ',' и удаляем пустые строки/пробелы
+        products = [p.strip() for p in text.replace('+', ',').split(',') if p.strip()]
+        return {'products': products}
+
+
+class ClassifyTaskWidget(BaseTaskWidget):
+    def init_ui(self):
+        layout = QVBoxLayout()
+        self.label = QLabel(f"К какому классу относится: {self.variant_data.get('item_name', '')}?")
+        layout.addWidget(self.label)
+
+        self.combo = QComboBox()
+        self.options = self.variant_data.get('options', [])
+        self.combo.addItems(self.options)
+        layout.addWidget(self.combo)
+
+        btn = QPushButton("Ответить")
+        btn.clicked.connect(self.emit_answer)
+        layout.addWidget(btn)
+        self.setLayout(layout)
+
+    def get_answer(self):
+        return {'class': self.combo.currentText()}
+
+
+class CalculationTaskWidget(BaseTaskWidget):
+    def init_ui(self):
+        layout = QVBoxLayout()
+        self.label = QLabel(self.variant_data.get('question', ''))
+        layout.addWidget(self.label)
+
+        self.input = QLineEdit()
+        self.input.setPlaceholderText("Введите число (например, 0.5 или 0,5)")
+        layout.addWidget(self.input)
+
+        btn = QPushButton("Ответить")
+        btn.clicked.connect(self.emit_answer)
+        layout.addWidget(btn)
+        self.setLayout(layout)
+
+    def get_answer(self):
+        text = self.input.text().strip()
+        # Заменяем запятую на точку для корректного преобразования
+        text = text.replace(',', '.')
+        try:
+            val = float(text)
+            return {'value': val}
+        except ValueError:
+            return {'value': None}
+        
+
+
+class ChainTransformWidget(BaseTaskWidget):
+    def init_ui(self):
+        layout = QVBoxLayout()
+        start = self.variant_data.get('starting_material', '')
+        steps = self.variant_data.get('steps', [])
+        layout.addWidget(QLabel(f"Исходное вещество: {start}"))
+        layout.addWidget(QLabel("Запишите продукты каждой стадии:"))
+
+        self.inputs = []
+        for i, step in enumerate(steps, 1):
+            lbl = QLabel(f"Стадия {i} ({step.get('reagent', '')}): ")
+            inp = QLineEdit()
+            layout.addWidget(lbl)
+            layout.addWidget(inp)
+            self.inputs.append(inp)
+
+        btn = QPushButton("Ответить")
+        btn.clicked.connect(self.emit_answer)
+        layout.addWidget(btn)
+        self.setLayout(layout)
+
+    def get_answer(self):
+        products = list()
+        for inp in self.inputs:
+            text = inp.text().strip()
+            prods = [p.strip() for p in text.replace('+', ',').split(',') if p.strip()]
+            products.append(prods)
+        return {'products': products}
+
+
+# ---------- Интерактивные / продвинутые ----------
+class VirtualLabWidget(BaseTaskWidget):
+    """Упрощённая версия: выбор действий и наблюдение результата."""
+    def init_ui(self):
+        layout = QVBoxLayout()
+        layout.addWidget(QLabel(f"Эксперимент: {self.variant_data.get('name', '')}"))
+        layout.addWidget(QLabel("Реагенты: " + ', '.join(self.variant_data.get('reagents', []))))
+        layout.addWidget(QLabel("Процедура: " + self.variant_data.get('procedure', '')))
+
+        layout.addWidget(QLabel("Что наблюдаете?"))
+        self.observation_combo = QComboBox()
+        self.observations = self.variant_data.get('observations', ["Выделение газа", "Изменение цвета", "Осадок", "Ничего"])
+        self.observation_combo.addItems(self.observations)
+        layout.addWidget(self.observation_combo)
+
+        btn = QPushButton("Проверить")
+        btn.clicked.connect(self.emit_answer)
+        layout.addWidget(btn)
+        self.setLayout(layout)
+
+    def get_answer(self):
+        return {'observation': self.observation_combo.currentText()}
+
+
+class PuzzleTaskWidget(BaseTaskWidget):
+    """Кроссворд / химический ребус."""
+    def init_ui(self):
+        layout = QVBoxLayout()
+        layout.addWidget(QLabel("Разгадайте:"))
+        for clue in self.variant_data.get('clues', []):
+            layout.addWidget(QLabel(f"• {clue}"))
+        self.input = QLineEdit()
+        layout.addWidget(self.input)
+
+        btn = QPushButton("Ответить")
+        btn.clicked.connect(self.emit_answer)
+        layout.addWidget(btn)
+        self.setLayout(layout)
+
+    def get_answer(self):
+        return {'answer': self.input.text().strip()}
+
+
+class TimedTaskWidget(BaseTaskWidget):
+    """Задание с таймером."""
+    answer_submitted = pyqtSignal(dict)
+
+    def init_ui(self):
+        layout = QVBoxLayout()
+        self.time_left = self.variant_data.get('time_limit', 30)
+        self.timer_label = QLabel(f"Осталось: {self.time_left} сек")
+        layout.addWidget(self.timer_label)
+
+        layout.addWidget(QLabel(self.variant_data.get('text', '')))
+
+        self.input = QLineEdit()
+        layout.addWidget(self.input)
+
+        self.btn = QPushButton("Ответить")
+        self.btn.clicked.connect(self.emit_answer)
+        layout.addWidget(self.btn)
+
+        self.timer = QTimer()
+        self.timer.timeout.connect(self.update_timer)
+        self.timer.start(1000)
+
+        self.setLayout(layout)
+
+    def update_timer(self):
+        self.time_left -= 1
+        self.timer_label.setText(f"Осталось: {self.time_left} сек")
+        if self.time_left <= 0:
+            self.timer.stop()
+            self.btn.setEnabled(False)
+            QMessageBox.information(self, "Время вышло", "Время истекло!")
+            self.answer_submitted.emit({'answer': None, 'timed_out': True})
+
+    def get_answer(self):
+        self.timer.stop()
+        return {'answer': self.input.text(), 'timed_out': False}
+
+
+# ---------- Фабрика ----------
+def create_task_widget(task, variant) -> BaseTaskWidget:
+    mapping = {
+        'choice': ChoiceTaskWidget,
+        'true_false': TrueFalseTaskWidget,
+        'match': MatchTaskWidget,
+        'fill_blank': FillBlankTaskWidget,
+        'balance_equation': BalanceEquationWidget,
+        'predict_product': PredictProductWidget,
+        'classify': ClassifyTaskWidget,
+        'calculation': CalculationTaskWidget,
+        'chain_transform': ChainTransformWidget,
+        'virtual_lab': VirtualLabWidget,
+        'puzzle': PuzzleTaskWidget,
+        'timed': TimedTaskWidget,
+    }
+    widget_class = mapping.get(task.type, ChoiceTaskWidget)
+    return widget_class(task, variant)
+```
+
+gui/windows/friends_window.py ```
+from services.friends_service import FriendsService
+
+from PyQt6.QtWidgets import (
+    QWidget,
+    QLabel,
+    QPushButton,
+    QLineEdit,
+    QVBoxLayout,
+    QHBoxLayout,
+    QScrollArea,
+    QFrame,
+    QMessageBox
+)
+
+from PyQt6.QtCore import Qt
+
+
+class FriendsWindow(QWidget):
+
+    def __init__(self, user, db_session):
+        super().__init__()
+
+        self.user = user
+        self.session = db_session
+
+        self.setWindowTitle("Интерактивная химия | Друзья")
+        self.setFixedSize(600, 500)
+
+        self.init_ui()
+
+    def init_ui(self):
+
+        main_layout = QVBoxLayout()
+
+        # ---- верхняя панель ----
+
+        top_layout = QHBoxLayout()
+
+        back_button = QPushButton("Назад")
+        back_button.clicked.connect(self.back_to_profile)
+
+        self.search_input = QLineEdit()
+        self.search_input.setPlaceholderText("Поиск друзей...")
+        self.search_input.setFixedWidth(250)
+
+        request_button = QPushButton("Отравить запрос")
+        request_button.clicked.connect(self.send_request)
+
+        top_layout.addWidget(back_button)
+        top_layout.addStretch()
+        top_layout.addWidget(self.search_input)
+        top_layout.addStretch()
+        top_layout.addWidget(request_button)
+        top_layout.addStretch()
+
+        # ---- список друзей ----
+
+        friends_title = QLabel("Друзья")
+        friends_title.setStyleSheet("font-size: 16px; font-weight: bold;")
+
+        self.friends_scroll = self.create_friends_scroll()
+
+        # ---- заявки ----
+
+        requests_title = QLabel("Заявки в друзья")
+        requests_title.setStyleSheet("font-size: 14px;")
+
+        self.requests_scroll = self.create_requests_scroll()
+
+        # ---- сборка ----
+
+        main_layout.addLayout(top_layout)
+
+        main_layout.addSpacing(10)
+
+        main_layout.addWidget(friends_title)
+        main_layout.addWidget(self.friends_scroll)
+
+        main_layout.addSpacing(10)
+
+        main_layout.addWidget(requests_title)
+        main_layout.addWidget(self.requests_scroll)
+
+        self.setLayout(main_layout)
+
+    # ---- скролл друзей ----
+
+    def create_friends_scroll(self):
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+
+        container = QWidget()
+        layout = QVBoxLayout()
+
+        # друзья
+        friends = FriendsService.get_friends(self.user.id)
+        for friend in friends:
+
+            friend_frame = QFrame()
+            friend_frame.setStyleSheet("""
+                background-color: #303030;
+                border: 1px solid #999;
+            """)
+            friend_frame.setFixedHeight(40)
+
+            label = QLabel(friend.username)
+
+            remove_button = QPushButton("Удалить")
+
+            remove_button.clicked.connect(
+                lambda _, u=friend: self.remove_friend(u)
+            )
+
+            row = QHBoxLayout()
+            row.addWidget(label)
+            row.addStretch()
+            row.addWidget(remove_button)
+
+            friend_frame.setLayout(row)
+
+            layout.addWidget(friend_frame)
+
+        layout.addStretch()
+
+        container.setLayout(layout)
+        scroll.setWidget(container)
+
+        return scroll
+
+    # ---- скролл заявок ----
+
+    def create_requests_scroll(self):
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFixedHeight(120)
+
+        container = QWidget()
+        layout = QVBoxLayout()
+
+        # заявки
+        requests = FriendsService.get_requests(self.user.id)
+        for request in requests:
+
+            request_frame = QFrame()
+            request_frame.setStyleSheet("""
+                background-color: #303030;
+                border: 1px solid #aaa;
+            """)
+            request_frame.setFixedHeight(40)
+
+            name = QLabel(f"Заявка от {request.username}")
+
+            accept = QPushButton("✔")
+            decline = QPushButton("✖")
+            accept.clicked.connect(
+                lambda _, u=request.id: self.handle_accept(u)
+            )
+
+            decline.clicked.connect(
+                lambda _, u=request.id: self.handle_decline(u)
+            )
+
+            row = QHBoxLayout()
+            row.addWidget(name)
+            row.addStretch()
+            row.addWidget(accept)
+            row.addWidget(decline)
+
+            request_frame.setLayout(row)
+
+            layout.addWidget(request_frame)
+
+        layout.addStretch()
+
+        container.setLayout(layout)
+        scroll.setWidget(container)
+
+        return scroll
+
+    # ---- кнопка назад ----
+
+    def back_to_profile(self):
+        from gui.windows.profile_window import ProfileWindow
+
+        self.profile = ProfileWindow(self.user, self.session)
+        self.profile.show()
+
+        self.close()
+
+    def send_request(self):
+        username = self.search_input.text()
+
+        success, message = FriendsService.send_request(
+            self.user.id,
+            username
+        )
+
+        if success:
+            QMessageBox.information(self, "Успех", message)
+        else:
+            QMessageBox.warning(self, "Ошибка", message)
+
+    def remove_friend(self, friend):
+        success, message = FriendsService.remove_friend(
+            self.user.id,
+            friend.id
+        )
+
+        if success:
+            QMessageBox.information(self, "Успех", message)
+            self.reload_friends()
+        else:
+            QMessageBox.warning(self, "Ошибка", message)
+
+    def reload_friends(self):
+        new_scroll = self.create_friends_scroll()
+
+        self.layout().replaceWidget(self.friends_scroll, new_scroll)
+        self.friends_scroll.deleteLater()
+
+        self.friends_scroll = new_scroll
+
+
+    def reload_requests(self):
+        new_scroll = self.create_requests_scroll()
+
+        self.layout().replaceWidget(self.requests_scroll, new_scroll)
+        self.requests_scroll.deleteLater()
+
+        self.requests_scroll = new_scroll
+
+    def handle_accept(self, requester_id):
+        success, message = FriendsService.accept_request(self.user.id, requester_id)
+
+        if success:
+            QMessageBox.information(self, "Успех", message)
+            self.reload_requests()
+            self.reload_friends()
+        else:
+            QMessageBox.warning(self, "Ошибка", message)
+
+    def handle_decline(self, requester_id):
+        success, message = FriendsService.decline_request(self.user.id, requester_id)
+
+        if success:
+            QMessageBox.information(self, "Успех", message)
+            self.reload_requests()
+        else:
+            QMessageBox.warning(self, "Ошибка", message)
+```
+
+gui/windows/lesson_list_window.py ```
+# gui/windows/lesson_list_window.py
+from PyQt6.QtWidgets import (
+    QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout, QScrollArea, QFrame
+)
+from PyQt6.QtCore import Qt
+from database.db import SessionLocal
+from database.models.progress import UserLessonProgress
+from services.lesson_service import LessonService
+from services.progress_service import ProgressService
+from gui.windows.lesson_window import LessonWindow
+from database.models.content import LessonVersion
+import uuid
+
+class LessonListWindow(QWidget):
+    def __init__(self, user, track, db_session):
+        super().__init__()
+        self.user = user
+        self.track = track
+        self.db = db_session
+        self.lesson_service = LessonService(self.db)
+        self.progress_service = ProgressService(self.db)
+
+        self.setWindowTitle(f"Уроки: {track.name}")
+        self.setFixedSize(500, 500)
+        self.init_ui()
+
+    def init_ui(self):
+        layout = QVBoxLayout()
+
+        # Заголовок
+        title = QLabel(f"Трек: {self.track.name}")
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        title.setStyleSheet("font-size: 18px; font-weight: bold;")
+        layout.addWidget(title)
+
+        # Список уроков
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        container = QWidget()
+        lessons_layout = QVBoxLayout()
+        container.setLayout(lessons_layout)
+
+        lessons = self.lesson_service.get_lessons_in_track(self.track.id)
+        track_progress = self.progress_service.get_or_create_track_progress(self.user.id, self.track.id)
+
+        for idx, lesson in enumerate(lessons):
+            # Получаем существующий прогресс урока (без создания)
+            lesson_progress = self.db.query(UserLessonProgress).filter(
+                UserLessonProgress.user_track_progress_id == track_progress.id,
+                UserLessonProgress.lesson_id == lesson.id
+            ).first()
+
+            # Определяем, заблокирован ли урок
+            is_locked = True
+            if track_progress.is_repeating:
+                is_locked = False
+            elif idx == 0:
+                is_locked = False  # первый урок всегда доступен
+            elif idx > 0:
+                prev_lesson = lessons[idx-1]
+                prev_progress = self.db.query(UserLessonProgress).filter(
+                    UserLessonProgress.user_track_progress_id == track_progress.id,
+                    UserLessonProgress.lesson_id == prev_lesson.id
+                ).first()
+                if prev_progress and prev_progress.status in ('completed', 'skipped'):
+                    is_locked = False
+
+            # Если урок доступен, но прогресса ещё нет, создадим его при открытии (в LessonWindow)
+            # Пока просто передаём флаг is_locked
+
+            active_version = self.db.query(LessonVersion).filter(
+                LessonVersion.version_of == lesson.id,
+                LessonVersion.is_active == True
+            ).order_by(LessonVersion.version_number.desc()).first()
+            title_text = active_version.title if active_version else f"Урок {lesson.order_index}"
+
+            frame = self.create_lesson_frame(lesson, title_text, lesson_progress, is_locked)
+            lessons_layout.addWidget(frame)
+
+        lessons_layout.addStretch()
+        scroll.setWidget(container)
+        layout.addWidget(scroll)
+
+        # Кнопка назад
+        back_btn = QPushButton("Назад к трекам")
+        back_btn.clicked.connect(self.back_to_tracks)
+        layout.addWidget(back_btn)
+
+        self.setLayout(layout)
+
+    def create_lesson_frame(self, lesson, title, progress, is_locked):
+        frame = QFrame()
+        frame.setStyleSheet("background-color: #303030; border: 1px solid #aaa; border-radius: 5px;")
+        frame.setFixedHeight(70)
+
+        hbox = QHBoxLayout()
+
+        # Номер урока
+        num_label = QLabel(f"{lesson.order_index+1}.")
+        num_label.setStyleSheet("font-size: 16px; font-weight: bold; color: white;")
+        num_label.setFixedWidth(30)
+
+        # Название
+        name_label = QLabel(title)
+        name_label.setStyleSheet("font-size: 14px; color: white;")
+
+        # Статус
+        if progress:
+            status_text = progress.status
+            if progress.status == 'completed':
+                status_text = "✓ Завершён"
+            elif progress.status == 'in_progress':
+                status_text = "В процессе"
+            elif progress.status == 'skipped':
+                status_text = "Пропущен"
+            elif progress.status == 'locked':
+                status_text = "🔒 Заблокирован"
+            elif progress.status == 'available':
+                status_text = "Доступен"
+        else:
+            # Если прогресса нет, но урок не заблокирован - значит он новый
+            if is_locked:
+                status_text = "🔒 Заблокирован"
+            else:
+                status_text = "Новый"
+        status_label = QLabel(status_text)
+        status_label.setStyleSheet("color: #aaa;")
+
+        hbox.addWidget(num_label)
+        hbox.addWidget(name_label, 1)
+        hbox.addWidget(status_label, 0)
+
+        # Кнопка "Открыть", если урок не заблокирован
+        if not is_locked and (progress is None or progress.status != 'locked'):
+            open_btn = QPushButton("Открыть")
+            open_btn.clicked.connect(lambda checked, l=lesson: self.open_lesson(l))
+            hbox.addWidget(open_btn, 0)
+        else:
+            dummy = QLabel("")
+            dummy.setFixedWidth(80)
+            hbox.addWidget(dummy)
+
+        frame.setLayout(hbox)
+        return frame
+
+    def open_lesson(self, lesson):
+        self.lesson_window = LessonWindow(self.user, self.track, lesson, self.db)
+        self.lesson_window.show()
+        self.close()
+
+    def back_to_tracks(self):
+        from gui.windows.track_selection_window import TrackSelectionWindow
+        self.tracks_window = TrackSelectionWindow(self.user, self.db)
+        self.tracks_window.show()
+        self.close()
+```
+
+gui/windows/lesson_window.py ```
+# gui/windows/lesson_window.py
+import json
+from PyQt6.QtWidgets import (
+    QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout, QTabWidget, QScrollArea, QFrame, QMessageBox, QStackedWidget
+)
+from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QPixmap
+from sqlalchemy import func
+from database.db import SessionLocal
+from services.lesson_service import LessonService
+from services.task_service import TaskService
+from services.progress_service import ProgressService
+from gui.widgets.task_widgets import create_task_widget
+from database.models.content import LessonVersion
+from database.models.progress import TaskAttempt, UserLessonProgress
+
+
+class LessonWindow(QWidget):
+    def __init__(self, user, track, lesson, db_session):
+        super().__init__()
+        self.user = user
+        self.track = track
+        self.lesson = lesson
+        self.db = db_session
+        self.lesson_service = LessonService(self.db)
+        self.progress_service = ProgressService(self.db)
+        self.task_service = TaskService(self.db)
+
+        # Получаем данные урока
+        self.content = self.lesson_service.get_lesson_with_content(lesson.id, user.id)
+        self.active_version = self.content['active_version']
+
+        self.lesson_tasks = self.task_service.get_lesson_tasks(lesson.id)  # список (LessonTask, Task)
+        self.current_task_idx = 0
+        self.task_variants = {}  # кеш вариантов для заданий
+        self.task_widgets = {}   # кеш виджетов заданий (опционально)
+
+        self.setWindowTitle(f"Урок: {self.active_version.title}")
+        self.setFixedSize(800, 600)
+        self.init_ui()
+
+    def init_ui(self):
+        main_layout = QVBoxLayout()
+
+        # Заголовок с информацией
+        header = QHBoxLayout()
+        title_label = QLabel(self.active_version.title)
+        title_label.setStyleSheet("font-size: 18px; font-weight: bold;")
+        xp_label = QLabel(f"Награда: {self.active_version.xp_reward} XP")
+        xp_label.setStyleSheet("color: #aaa;")
+        header.addWidget(title_label)
+        header.addStretch()
+        header.addWidget(xp_label)
+        main_layout.addLayout(header)
+
+        # Вкладки
+        self.tabs = QTabWidget()
+        self.theory_tab = self.create_theory_tab()
+        self.tabs.addTab(self.theory_tab, "Теория")
+        # Практика пока заглушка
+        # ... создаём вкладку практики ...
+        self.setup_practice_tab()
+        main_layout.addWidget(self.tabs)
+
+        # Нижняя панель с кнопками
+        bottom_layout = QHBoxLayout()
+        self.back_btn = QPushButton("Назад к урокам")
+        self.back_btn.clicked.connect(self.back_to_lessons)
+        self.complete_theory_btn = QPushButton("Завершить теорию")
+        self.complete_theory_btn.clicked.connect(self.complete_theory)
+        bottom_layout.addWidget(self.back_btn)
+        bottom_layout.addStretch()
+        bottom_layout.addWidget(self.complete_theory_btn)
+        main_layout.addLayout(bottom_layout)
+
+        self.setLayout(main_layout)
+
+    def create_theory_tab(self):
+        """Создаёт вкладку с теорией на основе JSONB."""
+        widget = QWidget()
+        layout = QVBoxLayout()
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        content_widget = QWidget()
+        content_layout = QVBoxLayout()
+
+        # Проходим по всем элементам теории
+        for lesson_theory, theory in self.content['theory']:
+            data = theory.data
+            if isinstance(data, str):
+                data = json.loads(data)
+            blocks = data.get('blocks', [])
+            for block in blocks:
+                if block['type'] == 'text':
+                    label = QLabel(block['content'])
+                    label.setWordWrap(True)
+                    label.setStyleSheet("font-size: 14px; margin: 5px;")
+                    content_layout.addWidget(label)
+                elif block['type'] == 'image':
+                    # Изображение (путь к файлу)
+                    pixmap = QPixmap(block['src'])
+                    if not pixmap.isNull():
+                        img_label = QLabel()
+                        img_label.setPixmap(pixmap.scaledToWidth(600, Qt.TransformationMode.SmoothTransformation))
+                        img_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                        content_layout.addWidget(img_label)
+                        if 'caption' in block:
+                            caption = QLabel(block['caption'])
+                            caption.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                            caption.setStyleSheet("color: #aaa; font-style: italic;")
+                            content_layout.addWidget(caption)
+                    else:
+                        error_label = QLabel(f"Изображение не найдено: {block['src']}")
+                        error_label.setStyleSheet("color: red;")
+                        content_layout.addWidget(error_label)
+                # Здесь можно добавить другие типы блоков (анимации и т.д.)
+
+        content_layout.addStretch()
+        content_widget.setLayout(content_layout)
+        scroll.setWidget(content_widget)
+        layout.addWidget(scroll)
+        widget.setLayout(layout)
+        return widget
+
+    def complete_theory(self):
+        # Отмечаем теорию как просмотренную
+        track_progress = self.progress_service.get_or_create_track_progress(self.user.id, self.track.id)
+        lesson_progress = self.progress_service.get_or_create_lesson_progress(
+            track_progress.id, self.lesson.id
+        )
+        lesson_progress.theory_viewed = True
+        lesson_progress.theory_viewed_at = func.now()
+        self.db.commit()
+        QMessageBox.information(self, "Теория", "Теория отмечена как изученная. Теперь можно перейти к заданиям.")
+        # Активируем вкладку "Практика" (пока заглушка)
+        self.tabs.setCurrentIndex(1)
+
+    def back_to_lessons(self):
+        from gui.windows.lesson_list_window import LessonListWindow
+        self.lesson_list = LessonListWindow(self.user, self.track, self.db)
+        self.lesson_list.show()
+        self.close()
+
+    def setup_practice_tab(self):
+        """Настраивает вкладку «Практика»."""
+        practice_widget = QWidget()
+        layout = QVBoxLayout()
+
+        # Стек для отображения текущего задания
+        self.task_stack = QStackedWidget()
+        layout.addWidget(self.task_stack, 1)
+
+        # Панель с прогрессом и кнопками
+        control_layout = QHBoxLayout()
+        self.progress_label = QLabel(f"Задание 0 из {len(self.lesson_tasks)}")
+        control_layout.addWidget(self.progress_label)
+        control_layout.addStretch()
+        self.next_btn = QPushButton("Далее")
+        self.next_btn.setEnabled(False)
+        self.next_btn.clicked.connect(self.next_task)
+        control_layout.addWidget(self.next_btn)
+        layout.addLayout(control_layout)
+
+        # Кнопка завершения урока
+        self.finish_btn = QPushButton("Завершить урок")
+        self.finish_btn.setEnabled(False)
+        self.finish_btn.clicked.connect(self.finish_lesson)
+        layout.addWidget(self.finish_btn)
+
+        practice_widget.setLayout(layout)
+        self.tabs.addTab(practice_widget, "Практика")
+
+        # Загружаем первое задание
+        self.load_task(0)
+
+    def load_task(self, index):
+        """Загружает задание по индексу в task_stack."""
+        if index >= len(self.lesson_tasks):
+            # Все задания пройдены
+            self.task_stack.setCurrentIndex(-1)
+            self.progress_label.setText("Все задания выполнены!")
+            self.next_btn.setEnabled(False)
+            self.finish_btn.setEnabled(True)
+            return
+
+        lesson_task, task = self.lesson_tasks[index]
+        # Получаем или создаём вариант
+        if task.id not in self.task_variants:
+            variant = self.task_service.get_or_create_variant(task)
+            self.task_variants[task.id] = variant
+        else:
+            variant = self.task_variants[task.id]
+
+        # Создаём виджет задания
+        widget = create_task_widget(task, variant)
+        widget.answer_submitted.connect(self.on_answer_submitted)
+
+        # Добавляем в стек (если уже был, заменяем)
+        if self.task_stack.count() > index:
+            self.task_stack.removeWidget(self.task_stack.widget(index))
+        self.task_stack.insertWidget(index, widget)
+        self.task_stack.setCurrentIndex(index)
+
+        self.progress_label.setText(f"Задание {index+1} из {len(self.lesson_tasks)}")
+        self.next_btn.setEnabled(False)  # ждём ответа
+
+    def on_answer_submitted(self, answer):
+        """Обрабатывает ответ пользователя на текущее задание."""
+        idx = self.current_task_idx
+        lesson_task, task = self.lesson_tasks[idx]
+        variant = self.task_variants[task.id]
+
+        # Сохраняем попытку
+        track_progress = self.progress_service.get_or_create_track_progress(self.user.id, self.track.id)
+        lesson_progress = self.progress_service.get_or_create_lesson_progress(
+            track_progress.id, self.lesson.id
+        )
+        attempt = self.task_service.save_attempt(
+            user_id=self.user.id,
+            task_id=task.id,
+            variant_id=variant.id,
+            user_answer=answer,
+            lesson_progress_id=lesson_progress.id
+        )
+
+        # Проверяем результат и даём обратную связь
+        if attempt.is_correct:
+            QMessageBox.information(self, "Результат", "Правильно!")
+        else:
+            QMessageBox.warning(self, "Результат", "Неправильно!")
+
+        # Разрешаем переход к следующему
+        self.next_btn.setEnabled(True)
+        # Если это было последнее задание, возможно сразу завершить
+        if idx == len(self.lesson_tasks) - 1:
+            self.finish_btn.setEnabled(True)
+
+    def next_task(self):
+        """Переход к следующему заданию."""
+        self.current_task_idx += 1
+        if self.current_task_idx < len(self.lesson_tasks):
+            self.load_task(self.current_task_idx)
+        else:
+            self.task_stack.setCurrentIndex(-1)
+            self.progress_label.setText("Все задания выполнены!")
+            self.next_btn.setEnabled(False)
+            self.finish_btn.setEnabled(True)
+
+    def finish_lesson(self):
+        """Завершает урок, если условия выполнены."""
+        # Проверяем, что теория просмотрена и выполнено >50% заданий
+        track_progress = self.progress_service.get_or_create_track_progress(self.user.id, self.track.id)
+        lesson_progress = self.progress_service.get_or_create_lesson_progress(
+            track_progress.id, self.lesson.id
+        )
+        if not lesson_progress.theory_viewed:
+            QMessageBox.warning(self, "Ошибка", "Сначала изучите теорию!")
+            return
+
+        total_tasks = len(self.lesson_tasks)
+        if total_tasks == 0:
+            # Если нет заданий, урок считается пройденным после теории
+            lesson_progress.status = 'completed'
+            lesson_progress.completed_at = func.now()
+            # Начисляем XP и т.д.
+            self.db.commit()
+            QMessageBox.information(self, "Урок завершён", "Поздравляем! Урок пройден.")
+            self.back_to_lessons()
+            return
+
+        # Подсчитываем количество успешно выполненных заданий
+        completed_tasks = self.db.query(TaskAttempt).filter(
+            TaskAttempt.lesson_progress_id == lesson_progress.id,
+            TaskAttempt.is_correct == True
+        ).count()
+
+        percent = (completed_tasks / total_tasks) * 100
+        if percent >= 50:  # Условие >50%
+            lesson_progress.status = 'completed'
+            lesson_progress.completed_at = func.now()
+            # Обновляем XP в треке
+            track_progress.total_xp += self.active_version.xp_reward
+            self.db.commit()
+            QMessageBox.information(self, "Урок завершён", f"Урок пройден! Получено {self.active_version.xp_reward} XP.")
+            self.back_to_lessons()
+        else:
+            QMessageBox.warning(self, "Недостаточно", f"Выполните хотя бы 50% заданий. Сейчас: {percent:.1f}%")
+```
+
+gui/windows/login_window.py ```
+# gui/windows/login_window.py
+
+from PyQt6.QtWidgets import (
+    QWidget,
+    QLabel,
+    QLineEdit,
+    QPushButton,
+    QVBoxLayout,
+    QMessageBox
+)
+
+from PyQt6.QtCore import Qt
+
+from gui.windows.register_window import RegisterWindow
+from gui.windows.main_window import MainMenuWindow
+from services.auth_service import AuthService
+
+class LoginWindow(QWidget):
+
+    def __init__(self, db_session):
+        super().__init__()
+
+        self.db_session = db_session
+
+        self.setWindowTitle("Интерактивная химия | Вход")
+        self.setFixedSize(400, 300)
+
+        self.init_ui()
+
+    def init_ui(self):
+
+        layout = QVBoxLayout()
+        layout.setSpacing(15)
+
+        title = QLabel("Вход")
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        title.setStyleSheet("font-size: 20px; font-weight: bold;")
+
+        self.username_input = QLineEdit()
+        self.username_input.setPlaceholderText("Имя пользователя")
+
+        self.password_input = QLineEdit()
+        self.password_input.setPlaceholderText("Пароль")
+        self.password_input.setEchoMode(QLineEdit.EchoMode.Password)
+
+        login_button = QPushButton("Войти")
+        login_button.clicked.connect(self.login)
+
+        register_button = QPushButton("Регистрация")
+        register_button.setFlat(True)
+        register_button.clicked.connect(self.open_register)
+
+        layout.addWidget(title)
+        layout.addWidget(self.username_input)
+        layout.addWidget(self.password_input)
+        layout.addWidget(login_button)
+        layout.addWidget(register_button)
+
+        layout.addStretch()
+
+        self.setLayout(layout)
+
+    def open_register(self):
+        self.register_window = RegisterWindow(self.db_session)
+        self.register_window.show()
+        self.close()
+
+    def login(self):
+        username = self.username_input.text()
+        password = self.password_input.text()
+
+        success, result = AuthService.login(username, password)
+
+        if success:
+            self.close()
+            self.main_window = MainMenuWindow(result, self.db_session)
+            self.main_window.show()
+
+        else:
+            QMessageBox.warning(self, "Ошибка!", result)
+            self.username_input.clear()
+            self.password_input.clear()
+```
+
+gui/windows/main_window.py ```
+from PyQt6.QtWidgets import (
+    QWidget,
+    QLabel,
+    QPushButton,
+    QVBoxLayout,
+    QHBoxLayout
+)
+
+from PyQt6.QtCore import Qt, QSize
+from PyQt6.QtGui import QIcon
+
+
+class MainMenuWindow(QWidget):
+
+    def __init__(self, user, db_session):
+        super().__init__()
+
+        self.user = user
+        self.db_session = db_session
+
+        self.setWindowTitle("Интерактивная химия | Главное меню")
+        self.setFixedSize(500, 400)
+
+        self.init_ui()
+
+    def init_ui(self):
+
+        main_layout = QVBoxLayout()
+
+        top_layout = QHBoxLayout()
+        top_layout.addStretch()
+
+        profile_button = QPushButton("Профиль")
+        profile_button.setIcon(QIcon("C:\\0.0.Diploma2\\profile.png"))
+        profile_button.setIconSize(QSize(32,32))
+        profile_button.clicked.connect(self.open_profile)
+
+        top_layout.addWidget(profile_button)
+
+        title = QLabel("Интерактивная химия")
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        title.setStyleSheet("font-size: 26px; font-weight: bold;")
+
+        menu_layout = QVBoxLayout()
+        menu_layout.setSpacing(15)
+
+        learn_button = QPushButton("Учиться")
+        learn_button.clicked.connect(self.open_learning)
+
+        reference_button = QPushButton("Справочник")
+        reference_button.clicked.connect(self.open_reference)
+
+        reference_button = QPushButton("Доска почёта")
+        reference_button.clicked.connect(self.open_leaderboard)
+
+        reference_button = QPushButton("Настройки")
+        reference_button.clicked.connect(self.open_settings)
+
+        exit_button = QPushButton("Выход")
+        exit_button.clicked.connect(self.logout)
+
+        menu_layout.addWidget(learn_button)
+        menu_layout.addWidget(reference_button)
+        menu_layout.addWidget(exit_button)
+
+        main_layout.addLayout(top_layout)
+        main_layout.addStretch()
+
+        main_layout.addWidget(title)
+
+        main_layout.addSpacing(20)
+        main_layout.addLayout(menu_layout)
+
+        main_layout.addStretch()
+
+        self.setLayout(main_layout)
+
+    def open_profile(self):
+        from gui.windows.profile_window import ProfileWindow
+        self.profile_window = ProfileWindow(self.user, self.db_session)
+        self.profile_window.show()
+        self.close()
+
+    def open_learning(self):
+        from gui.windows.track_selection_window import TrackSelectionWindow
+        self.learning_window = TrackSelectionWindow(self.user, self.db_session)
+        self.learning_window.show()
+        self.close()
+
+    def open_reference(self):
+        print("Открыть справочник")
+
+    def open_leaderboard(self):
+        print("Открыть доску почёта")
+
+    def open_settings(self):
+        print("Открыть настройки")
+
+    def logout(self):
+        from gui.windows.login_window import LoginWindow
+        self.login_window = LoginWindow(self.db_session)
+        self.login_window.show()
+        self.close()
+```
+
+gui/windows/profile_window.py ```
+from PyQt6.QtWidgets import (
+    QWidget,
+    QLabel,
+    QPushButton,
+    QVBoxLayout,
+    QHBoxLayout,
+    QScrollArea,
+    QFrame,
+    QMessageBox
+)
+
+from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QPixmap
+
+
+class ProfileWindow(QWidget):
+
+    def __init__(self, user, db_session):
+        super().__init__()
+
+        self.user = user
+        self.session = db_session
+
+        self.setWindowTitle("Интерактивная химия | Профиль")
+        self.setFixedSize(600, 500)
+
+        self.init_ui()
+
+    def init_ui(self):
+
+        main_layout = QVBoxLayout()
+
+        # ---- верхняя панель ----
+
+        top_layout = QHBoxLayout()
+
+        settings_button = QPushButton("Настройки")
+        settings_button.clicked.connect(self.open_settings)
+
+        friends_button = QPushButton("Друзья")
+        friends_button.clicked.connect(self.open_friends)
+
+        menu_button = QPushButton("Меню")
+        menu_button.clicked.connect(self.back_to_menu)
+
+        top_layout.addWidget(settings_button)
+        top_layout.addStretch()
+        top_layout.addWidget(friends_button)
+        top_layout.addStretch()
+        top_layout.addWidget(menu_button)
+
+        # ---- аватар ----
+
+        avatar = QLabel()
+        pixmap = QPixmap("C:\\0.0.Diploma2\\profile.png")
+
+        avatar.setPixmap(pixmap.scaled(
+            100,
+            100,
+            Qt.AspectRatioMode.KeepAspectRatio,
+            Qt.TransformationMode.SmoothTransformation
+        ))
+
+        avatar.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        # ---- имя пользователя ----
+
+        username_label = QLabel(self.user.username)
+        username_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        username_label.setStyleSheet("font-size: 18px; font-weight: bold;")
+
+        # ---- витрина ----
+
+        showcase_title = QLabel("Витрина")
+        showcase_title.setStyleSheet("font-size: 16px;")
+
+        showcase_scroll = self.create_scroll_section("здесь будет\nвитрина")
+
+        # ---- достижения ----
+
+        achievements_title = QLabel("Достижения")
+        achievements_title.setStyleSheet("font-size: 16px;")
+
+        achievements_scroll = self.create_scroll_section("здесь будет\nдостижение")
+
+        # ---- сборка ----
+
+        main_layout.addLayout(top_layout)
+
+        main_layout.addSpacing(10)
+
+        main_layout.addWidget(avatar)
+        main_layout.addWidget(username_label)
+
+        main_layout.addSpacing(20)
+
+        main_layout.addWidget(showcase_title)
+        main_layout.addWidget(showcase_scroll)
+
+        main_layout.addSpacing(10)
+
+        main_layout.addWidget(achievements_title)
+        main_layout.addWidget(achievements_scroll)
+
+        self.setLayout(main_layout)
+
+    # ---- создание горизонтального скролла ----
+
+    def create_scroll_section(self, filler):
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFixedHeight(120)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+
+        container = QWidget()
+        layout = QHBoxLayout()
+
+        # временные элементы витрины
+        for _ in range(10):
+
+            cell = QFrame()
+            cell.setFixedSize(100, 100)
+            cell.setStyleSheet("""
+                background-color: #303030;
+                border: 1px solid #999;
+            """)
+
+            label = QLabel(filler)
+            label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+            cell_layout = QVBoxLayout()
+            cell_layout.addWidget(label)
+
+            cell.setLayout(cell_layout)
+
+            layout.addWidget(cell)
+
+        layout.addStretch()
+
+        container.setLayout(layout)
+
+        scroll.setWidget(container)
+
+        return scroll
+
+    # ---- кнопки ----
+
+    def back_to_menu(self):
+        from gui.windows.main_window import MainMenuWindow
+
+        self.menu = MainMenuWindow(self.user, self.session)
+        self.menu.show()
+
+        self.close()
+
+    def open_friends(self):
+        from gui.windows.friends_window import FriendsWindow
+
+        self.friends = FriendsWindow(self.user, self.session)
+        self.friends.show()
+
+        self.close()
+
+    def open_settings(self):
+        QMessageBox.information(self, None, "Открыть настройки")
+
+```
+
+gui/windows/register_window.py ```
+from PyQt6.QtWidgets import (
+    QWidget,
+    QLabel,
+    QLineEdit,
+    QPushButton,
+    QVBoxLayout,
+    QMessageBox
+)
+
+from PyQt6.QtCore import Qt
+
+from services.auth_service import AuthService
+
+import re
+import dns.resolver
+
+def validate_email(email: str) -> bool:
+    pattern = r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$"
+    if not re.match(pattern, email):
+        return False
+
+    domain = email.split("@")[1]
+    try:
+        dns.resolver.resolve(domain, "MX")
+        return True
+    except:
+        return False
+
+class RegisterWindow(QWidget):
+
+    def __init__(self, db_session):
+        super().__init__()
+        self.db_session = db_session
+
+        self.setWindowTitle("Интерактивная химия | Регистрация")
+        self.setFixedSize(400, 350)
+
+        self.init_ui()
+
+    def init_ui(self):
+
+        layout = QVBoxLayout()
+        layout.setSpacing(15)
+
+        title = QLabel("Регистрация")
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        title.setStyleSheet("font-size: 20px; font-weight: bold;")
+
+        self.username_input = QLineEdit()
+        self.username_input.setPlaceholderText("Имя пользователя")
+
+        self.email_input = QLineEdit()
+        self.email_input.setPlaceholderText("Email")
+
+        self.password_input = QLineEdit()
+        self.password_input.setPlaceholderText("Пароль")
+        self.password_input.setEchoMode(QLineEdit.EchoMode.Password)
+
+        self.confirm_password_input = QLineEdit()
+        self.confirm_password_input.setPlaceholderText("Повторите пароль")
+        self.confirm_password_input.setEchoMode(QLineEdit.EchoMode.Password)
+
+        register_button = QPushButton("Зарегистрироваться")
+        register_button.clicked.connect(self.register)
+
+        back_button = QPushButton("Вернутся ко входу")
+        back_button.setFlat(True)
+        back_button.clicked.connect(self.back_to_login)
+
+        layout.addWidget(title)
+        layout.addWidget(self.username_input)
+        layout.addWidget(self.email_input)
+        layout.addWidget(self.password_input)
+        layout.addWidget(self.confirm_password_input)
+        layout.addWidget(register_button)
+        layout.addWidget(back_button)
+
+        layout.addStretch()
+
+        self.setLayout(layout)
+
+    def register(self):
+        username = self.username_input.text()
+        email = self.email_input.text()
+        password = self.password_input.text()
+
+        if self.password_input.text() != self.confirm_password_input.text():
+            success, message = False, "Пароли не совпадают"
+
+        elif not validate_email(self.email_input.text()):
+            success, message = False, "Введите корректный email"
+        
+        else:
+            success, message = AuthService.register(username, email, password)
+
+        if success:
+            from gui.windows.login_window import LoginWindow
+            QMessageBox.information(self, "Success", message)
+            self.login_window = LoginWindow(db_session=self.db_session)
+            self.login_window.show()
+            self.close()
+
+        else:
+            QMessageBox.warning(self, "Error", message)
+
+    def back_to_login(self):
+        from gui.windows.login_window import LoginWindow
+        self.login_window = LoginWindow(db_session=self.db_session)
+        self.login_window.show()
+        self.close()
+```
+
+gui/windows/track_selection_window.py ```
+# gui/windows/track_selection_window.py
+from PyQt6.QtWidgets import (
+    QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout, QScrollArea, QFrame, QMessageBox
+)
+from PyQt6.QtCore import Qt
+from database.db import SessionLocal
+from database.models.progress import UserTrackProgress
+from services.track_service import TrackService
+from services.progress_service import ProgressService
+from gui.windows.lesson_list_window import LessonListWindow
+from gui.windows.main_window import MainMenuWindow
+import uuid
+
+class TrackSelectionWindow(QWidget):
+    def __init__(self, user, db_session):
+        super().__init__()
+        self.user = user
+        self.db = db_session
+        self.track_service = TrackService(self.db)
+        self.progress_service = ProgressService(self.db)
+
+        self.setWindowTitle("Выбор трека")
+        self.setFixedSize(600, 400)
+        self.init_ui()
+
+    def init_ui(self):
+        layout = QVBoxLayout()
+
+        # Заголовок
+        title = QLabel("Доступные образовательные треки")
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        title.setStyleSheet("font-size: 20px; font-weight: bold;")
+        layout.addWidget(title)
+
+        # Скролл с треками
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        container = QWidget()
+        tracks_layout = QVBoxLayout()
+        container.setLayout(tracks_layout)
+
+        tracks = self.track_service.get_published_tracks()
+        for track in tracks:
+            # Получаем прогресс пользователя по треку
+            progress = self.db.query(UserTrackProgress).filter(
+                UserTrackProgress.user_id == self.user.id,
+                UserTrackProgress.track_id == track.id
+            ).first()
+            frame = self.create_track_frame(track, progress)
+            tracks_layout.addWidget(frame)
+
+        tracks_layout.addStretch()
+        scroll.setWidget(container)
+        layout.addWidget(scroll)
+
+        # Кнопка назад
+        back_btn = QPushButton("Назад в меню")
+        back_btn.clicked.connect(self.back_to_menu)
+        layout.addWidget(back_btn)
+
+        self.setLayout(layout)
+
+    def create_track_frame(self, track, progress):
+        frame = QFrame()
+        frame.setStyleSheet("background-color: #303030; border: 1px solid #aaa; border-radius: 5px;")
+        frame.setFixedHeight(100)
+
+        hbox = QHBoxLayout()
+
+        # Информация о треке
+        info_layout = QVBoxLayout()
+        name_label = QLabel(track.name)
+        name_label.setStyleSheet("font-size: 16px; font-weight: bold; color: white;")
+        desc_label = QLabel(track.description or "")
+        desc_label.setWordWrap(True)
+        desc_label.setStyleSheet("color: #ccc;")
+
+        # Прогресс
+        if progress:
+            progress_text = f"Прогресс: {progress.total_xp} XP"
+            if progress.status == 'completed':
+                progress_text += " (завершён)"
+            elif progress.status == 'active':
+                progress_text += f" (урок {progress.current_lesson_index + 1})"
+        else:
+            progress_text = "Новый трек"
+        progress_label = QLabel(progress_text)
+        progress_label.setStyleSheet("color: #aaa;")
+
+        info_layout.addWidget(name_label)
+        info_layout.addWidget(desc_label)
+        info_layout.addWidget(progress_label)
+        info_layout.addStretch()
+
+        # Кнопка действия
+        btn = QPushButton()
+        if progress and progress.status == 'completed':
+            btn.setText("Повторить")
+        elif progress and progress.status == 'active':
+            btn.setText("Продолжить")
+        else:
+            btn.setText("Начать")
+        btn.clicked.connect(lambda checked, t=track, p=progress: self.handle_track_action(t, p))
+
+        hbox.addLayout(info_layout, 1)
+        hbox.addWidget(btn, 0)
+        frame.setLayout(hbox)
+
+        return frame
+
+    def handle_track_action(self, track, progress):
+        if not progress:
+            # Начинаем трек
+            self.track_service.start_track(self.user.id, track.id)
+        # Открываем список уроков
+        self.open_lesson_list(track)
+
+    def open_lesson_list(self, track):
+        self.lesson_list_window = LessonListWindow(self.user, track, self.db)
+        self.lesson_list_window.show()
+        self.close()
+
+    def back_to_menu(self):
+        self.menu = MainMenuWindow(self.user, self.db)
+        self.menu.show()
+        self.close()
+```
+
+services/auth_service.py ```
+import bcrypt
+from database.db import SessionLocal
+from database.models.user import User
+
+
+class AuthService:
+
+    @staticmethod
+    def hash_password(password: str) -> str:
+        salt = bcrypt.gensalt()
+        hashed = bcrypt.hashpw(password.encode(), salt)
+        return hashed.decode()
+
+    @staticmethod
+    def verify_password(password: str, hashed_password: str) -> bool:
+        return bcrypt.checkpw(password.encode(), hashed_password.encode())
+
+    @staticmethod
+    def register(username: str, email: str, password: str):
+
+        db = SessionLocal()
+
+        existing_user = db.query(User).filter(
+            (User.username == username) | (User.email == email)
+        ).first()
+
+        if existing_user:
+            return False, "Такой пользователь уже зарегистрирован"
+
+        hashed_password = AuthService.hash_password(password)
+
+        user = User(
+            username=username,
+            email=email,
+            password_hash=hashed_password
+        )
+
+        db.add(user)
+        db.commit()
+
+        return True, "Успешная регистрация"
+
+    @staticmethod
+    def login(username: str, password: str):
+
+        db = SessionLocal()
+
+        user = db.query(User).filter(User.username == username).first()
+
+        if not user:
+            return False, "Пользователя с таким именем не существует"
+
+        if not AuthService.verify_password(password, user.password_hash):
+            return False, "Неверный пароль"
+
+        return True, user
+```
+
+services/friends_service.py ```
+from database.db import SessionLocal
+from database.models.user import User, Friendship
+
+
+class FriendsService:
+
+    # 🔍 поиск пользователей
+    @staticmethod
+    def search_users(query: str):
+
+        db = SessionLocal()
+
+        users = db.query(User).filter(
+            User.username.ilike(f"%{query}%")
+        ).all()
+
+        return users
+    
+    @staticmethod
+    def get_user_by_id(u_id : int):
+
+        db = SessionLocal()
+
+        user = db.query(User).filter(
+            User.id == u_id
+        ).all()
+
+        return user
+
+    # 👥 список друзей
+    @staticmethod
+    def get_friends(user_id):
+
+        db = SessionLocal()
+
+        friendships = db.query(Friendship).filter(
+            ((Friendship.requester_id == user_id) |
+             (Friendship.addressee_id == user_id)) &
+            (Friendship.status == "accepted")
+        ).all()
+
+        friends = []
+
+        for f in friendships:
+            friend_id = (
+                f.addressee_id if f.requester_id == user_id
+                else f.requester_id
+            )
+
+            user = db.query(User).filter(User.id == friend_id).first()
+            if user:
+                friends.append(user)
+
+        return friends
+
+    # 📩 входящие заявки
+    @staticmethod
+    def get_requests(user_id):
+
+        db = SessionLocal()
+
+        requests = db.query(Friendship).filter(
+            (Friendship.addressee_id == user_id) &
+            (Friendship.status == "pending")
+        ).all()
+
+        users = []
+
+        for r in requests:
+            user = db.query(User).filter(User.id == r.requester_id).first()
+            if user:
+                users.append(user)
+
+        return users
+
+    # ➕ отправить заявку
+    @staticmethod
+    def send_request(requester_id, username):
+
+        db = SessionLocal()
+
+        target = db.query(User).filter(User.username == username).first()
+
+        if not target:
+            return False, "Пользователь не найден"
+
+        if target.id == requester_id:
+            return False, "Нельзя добавить себя"
+
+        # проверка существующей связи
+        existing = db.query(Friendship).filter(
+            ((Friendship.requester_id == requester_id) &
+             (Friendship.addressee_id == target.id)) |
+            ((Friendship.requester_id == target.id) &
+             (Friendship.addressee_id == requester_id))
+        ).first()
+
+        if existing:
+            return False, "Запрос уже существует"
+
+        friendship = Friendship(
+            requester_id=requester_id,
+            addressee_id=target.id,
+            status="pending"
+        )
+
+        db.add(friendship)
+        db.commit()
+
+        return True, "Запрос отправлен"
+
+    # ✅ принять заявку
+    @staticmethod
+    def accept_request(user_id, requester_id):
+
+        db = SessionLocal()
+
+        friendship = db.query(Friendship).filter(
+            (Friendship.requester_id == requester_id) &
+            (Friendship.addressee_id == user_id)
+        ).first()
+
+        if not friendship:
+            return False, "Заявка не найдена"
+
+        friendship.status = "accepted"
+        db.commit()
+
+        return True, "Пользователь добавлен в друзья"
+
+    # ❌ отклонить заявку
+    @staticmethod
+    def decline_request(user_id, requester_id):
+
+        db = SessionLocal()
+
+        friendship = db.query(Friendship).filter(
+            (Friendship.requester_id == requester_id) &
+            (Friendship.addressee_id == user_id)
+        ).first()
+
+        if not friendship:
+            return False, "Заявка не найдена"
+
+        db.delete(friendship)
+        db.commit()
+
+        return True, "Заявка отклонена"
+    
+    # ❌ удалить друга
+    @staticmethod
+    def remove_friend(user_id, friend_id):
+
+        db = SessionLocal()
+
+        friendship = db.query(Friendship).filter(
+            (
+                (Friendship.requester_id == user_id) &
+                (Friendship.addressee_id == friend_id)
+            ) |
+            (
+                (Friendship.requester_id == friend_id) &
+                (Friendship.addressee_id == user_id)
+            )
+        ).first()
+
+        if not friendship:
+            return False, "Пользователь не найден в друзьях"
+
+        db.delete(friendship)
+        db.commit()
+
+        return True, "Пользователь удалён из друзей"
+```
+
+services/lesson_service.py ```
+import uuid
+from sqlalchemy.orm import Session
+from database.models.content import Lesson, LessonVersion, Theory, LessonTheory, Task, LessonTask
+from database.models.progress import UserLessonProgress
+from typing import List, Optional
+
+class LessonService:
+    def __init__(self, db: Session):
+        self.db = db
+
+    def get_lessons_in_track(self, track_id: int) -> List[Lesson]:
+        """Получить все уроки трека в правильном порядке."""
+        return self.db.query(Lesson).filter(
+            Lesson.track_id == track_id
+        ).order_by(Lesson.order_index).all()
+
+    def get_lesson_with_content(self, lesson_id: int, user_id: uuid.UUID) -> Optional[dict]:
+        """Получить урок с активной версией теории и заданиями."""
+        lesson = self.db.query(Lesson).filter(Lesson.id == lesson_id).first()
+        if not lesson:
+            return None
+
+        # Находим активную версию
+        active_version = self.db.query(LessonVersion).filter(
+            LessonVersion.version_of == lesson_id,
+            LessonVersion.is_active == True
+        ).order_by(LessonVersion.version_number.desc()).first()
+
+        if not active_version:
+            return None
+
+        # Получаем теорию и задания
+        theory_items = self.db.query(LessonTheory, Theory).select_from(
+            LessonTheory
+        ).join(
+            Theory, LessonTheory.theory_id == Theory.id
+        ).filter(
+            LessonTheory.lesson_id == lesson_id
+        ).order_by(LessonTheory.order_index).all()
+
+        task_items = self.db.query(LessonTask, Task).select_from(
+            LessonTask
+        ).join(
+            Task, LessonTask.task_id == Task.id
+        ).filter(
+            LessonTask.lesson_id == lesson_id
+        ).order_by(LessonTask.order_index).all()
+
+        return {
+            'lesson': lesson,
+            'active_version': active_version,
+            'theory': theory_items,
+            'tasks': task_items
+        }
+
+```
+
+services/progress_service.py ```
+import uuid
+from sqlalchemy.sql import func
+from sqlalchemy.orm import Session
+from database.models.progress import UserTrackProgress, UserLessonProgress
+from database.models.user import User
+import uuid
+from typing import Optional
+
+class ProgressService:
+    def __init__(self, db: Session):
+        self.db = db
+
+    def get_or_create_track_progress(self, user_id: uuid.UUID, track_id: int) -> UserTrackProgress:
+        """Получить или создать прогресс трека для пользователя."""
+        progress = self.db.query(UserTrackProgress).filter(
+            UserTrackProgress.user_id == user_id,
+            UserTrackProgress.track_id == track_id
+        ).first()
+
+        if progress:
+            return progress
+
+        new_progress = UserTrackProgress(
+            user_id=user_id,
+            track_id=track_id,
+            status='active',
+            started_at=func.now()
+        )
+        self.db.add(new_progress)
+        self.db.commit()
+        return new_progress
+
+    def get_or_create_lesson_progress(self, track_progress_id: int, lesson_id: int) -> UserLessonProgress:
+        """Получить или создать прогресс урока по ID прогресса трека и ID урока."""
+        progress = self.db.query(UserLessonProgress).filter(
+            UserLessonProgress.user_track_progress_id == track_progress_id,
+            UserLessonProgress.lesson_id == lesson_id
+        ).first()
+
+        if progress:
+            return progress
+
+        new_progress = UserLessonProgress(
+            user_track_progress_id=track_progress_id,
+            lesson_id=lesson_id,
+            status='locked',  # начальный статус, потом изменится
+            started_at=func.now()
+        )
+        self.db.add(new_progress)
+        self.db.commit()
+        self.db.refresh(new_progress)
+        return new_progress
+
+    def update_lesson_status(self, lesson_progress_id: int, status: str) -> None:
+        """Обновить статус урока."""
+        self.db.query(UserLessonProgress).filter(
+            UserLessonProgress.id == lesson_progress_id
+        ).update({'status': status})
+        self.db.commit()
+```
+
+services/task_service.py ```
+import json
+import uuid
+from datetime import datetime
+from sqlalchemy.orm import Session
+from database.models.content import Task, TaskVariant, TaskGenerator, LessonTask
+from database.models.progress import TaskAttempt
+
+class TaskService:
+    def __init__(self, db: Session):
+        self.db = db
+
+    def get_lesson_tasks(self, lesson_id: int):
+        """Возвращает список заданий урока с сортировкой."""
+        return self.db.query(LessonTask, Task)\
+            .join(Task, LessonTask.task_id == Task.id)\
+            .filter(LessonTask.lesson_id == lesson_id)\
+            .order_by(LessonTask.order_index)\
+            .all()
+
+    def get_or_create_variant(self, task: Task) -> TaskVariant:
+        """
+        Для задания возвращает вариант.
+        Если есть генератор — создаёт новый вариант на основе шаблона.
+        Если есть готовые варианты — выбирает случайный.
+        """
+        # Если у задания есть готовые варианты, выбираем случайный
+        variants = self.db.query(TaskVariant).filter(TaskVariant.base_task_id == task.id).all()
+        if variants:
+            import random
+            variant = random.choice(variants)
+            variant.usage_count += 1
+            self.db.commit()
+            return variant
+
+        # Если задание генерируемое — создаём новый вариант
+        if task.generator_id:
+            generator = self.db.query(TaskGenerator).filter(TaskGenerator.id == task.generator_id).first()
+            if generator:
+                variant = self.generate_variant_from_template(task, generator)
+                self.db.add(variant)
+                self.db.commit()
+                self.db.refresh(variant)
+                return variant
+
+        # Если нет вариантов и нет генератора — используем встроенные в task данные
+        # Создаём фиктивный вариант на основе данных задания
+        variant = TaskVariant(
+            base_task_id=task.id,
+            variant_data={},
+            correct_answer=task.correct_answers,
+            usage_count=0
+        )
+        self.db.add(variant)
+        self.db.commit()
+        self.db.refresh(variant)
+        return variant
+
+    def generate_variant_from_template(self, task: Task, generator: TaskGenerator) -> TaskVariant:
+        import random
+        template = generator.template_data
+        task_type = task.type
+
+        variant_data = {}
+        correct_answer = None
+
+        if task_type == 'choice':
+            # template: {"questions": [{"text": "...", "options": [...], "correct_index": 0}, ...]}
+            q = random.choice(template['questions'])
+            variant_data = {'question_text': q['text'], 'options': q['options']}
+            correct_answer = {'answer': q['correct_index']}
+
+        elif task_type == 'true_false':
+            # template: {"statements": [{"text": "...", "is_true": true}, ...]}
+            stmt = random.choice(template['statements'])
+            variant_data = {'question_text': stmt['text']}
+            correct_answer = {'answer': stmt['is_true']}
+
+        elif task_type == 'match':
+            # template: {"pairs": [{"left": [...], "right": [...]}]} (генерируемый набор пар)
+            pairs = template['pairs']
+            selected = random.choice(pairs)
+            variant_data = {'left_items': selected['left'], 'right_items': selected['right']}
+            correct_answer = {'matches': selected['matches']}  # список пар индексов или словарь
+
+        elif task_type == 'fill_blank':
+            # template: {"texts": [{"text": "... ___ ...", "answer": "..."}]}
+            item = random.choice(template['texts'])
+            variant_data = {'text': item['text']}
+            correct_answer = {'answer': item['answer']}
+
+        elif task_type == 'balance_equation':
+            # template: {"equations": [{"reactants": [...], "products": [...], "coefficients": [...]}]}
+            eq = random.choice(template['equations'])
+            variant_data = {'reactants': eq['reactants'], 'products': eq['products']}
+            correct_answer = {'coefficients': eq['coefficients']}
+
+        elif task_type == 'predict_product':
+            # template: {"reactions": [{"reactants": [...], "products": [...]}]}
+            rxn = random.choice(template['reactions'])
+            variant_data = {'reactants': rxn['reactants']}
+            correct_answer = {'products': rxn['products']}
+
+        elif task_type == 'classify':
+            # template: {"items": [{"name": "...", "options": [...], "correct_class": "..."}]}
+            item = random.choice(template['items'])
+            variant_data = {'item_name': item['name'], 'options': item['options']}
+            correct_answer = {'class': item['correct_class']}
+
+        elif task_type == 'calculation':
+            # template: {"formulas": [{"params": {...}, "answer": ...}]}
+            formula = random.choice(template['formulas'])
+            # генерируем случайные параметры
+            params = {k: random.randint(v[0], v[1]) for k, v in formula['params'].items()}
+            variant_data = {'question': formula['question_template'].format(**params), 'params': params}
+            # вычисляем ответ по формуле
+            answer = eval(formula['expression'], {}, params)  # осторожно с eval, но для диплома ОК
+            correct_answer = {'value': answer, 'tolerance': formula.get('tolerance', 0.01)}
+
+        elif task_type == 'chain_transform':
+            # template: {"chains": [{"steps": [...], "starting_material": "..."}]}
+            chain = random.choice(template['chains'])
+            variant_data = {'starting_material': chain['starting_material'], 'steps': chain['steps']}
+            correct_answer = {'products': [step['product'] for step in chain['steps']]}
+
+        elif task_type == 'virtual_lab':
+            # template: {"experiments": [{"name": "...", "reagents": [...], "procedure": "...", "observations": {...}}]}
+            exp = random.choice(template['experiments'])
+            variant_data = {'name': exp['name'], 'reagents': exp['reagents'], 'procedure': exp['procedure']}
+            correct_answer = {'expected_observation': exp['expected_observation']}
+
+        elif task_type == 'find_error':
+            # template: {"texts": [{"text": "...", "error_position": ..., "correct_text": "..."}]}
+            err = random.choice(template['texts'])
+            variant_data = {'text': err['text']}
+            correct_answer = {'error_position': err['error_position'], 'correction': err['correct_text']}
+
+        elif task_type == 'open_experiment':
+            # template: {"scenarios": [{"description": "...", "expected_answer": "..."}]}
+            scen = random.choice(template['scenarios'])
+            variant_data = {'description': scen['description']}
+            correct_answer = {'keywords': scen['keywords']}  # для проверки открытого ответа по ключевым словам
+
+        elif task_type == 'puzzle':
+            # template: {"puzzles": [{"clues": [...], "answer": "..."}]}
+            puz = random.choice(template['puzzles'])
+            variant_data = {'clues': puz['clues']}
+            correct_answer = {'answer': puz['answer']}
+
+        elif task_type == 'timed':
+            # template: {"tasks": [{"text": "...", "answer": "...", "time_limit": 30}]}
+            t = random.choice(template['tasks'])
+            variant_data = {'text': t['text'], 'time_limit': t['time_limit']}
+            correct_answer = {'answer': t['answer']}
+
+        else:
+            # fallback
+            variant_data = {}
+            correct_answer = task.correct_answers
+
+        variant = TaskVariant(
+            base_task_id=task.id,
+            variant_data=variant_data,
+            correct_answer=correct_answer,
+            usage_count=0
+        )
+        return variant
+
+    def check_answer(self, variant: TaskVariant, user_answer: dict, scoring_type: str, max_score: int) -> tuple:
+        correct = variant.correct_answer
+        if isinstance(correct, str):
+            correct = json.loads(correct)
+
+        is_correct = False
+
+        # Обработка различных форматов ответов:
+        if scoring_type == 'binary':
+            if 'answer' in correct:
+                is_correct = (user_answer.get('answer') == correct['answer'])
+            elif 'coefficients' in correct:
+                user_coeff = user_answer.get('coefficients', [])
+                is_correct = (user_coeff == correct['coefficients'])
+            elif 'products' in correct:
+                if correct['products'] and isinstance(correct['products'], list):
+                    # chain_transform: список стадий (списки строк)
+                    if correct['products'] and isinstance(correct['products'][0], list):
+                        user_prods = user_answer.get('products', [])
+                        if len(user_prods) != len(correct['products']):
+                            is_correct = False
+                        else:
+                            is_correct = True
+                            for u, c in zip(user_prods, correct['products']):
+                                if set(u) != set(c):
+                                    is_correct = False
+                                    break
+                    else:
+                        # predict_product: плоский список строк
+                        user_prods = user_answer.get('products', [])
+                        # Нормализуем до плоского списка строк
+                        if user_prods and isinstance(user_prods[0], list):
+                            user_prods = [item for sublist in user_prods for item in sublist]
+                        is_correct = set(user_prods) == set(correct['products'])
+            elif 'class' in correct:
+                is_correct = (user_answer.get('class') == correct['class'])
+            elif 'value' in correct:
+                try:
+                    uv = float(user_answer.get('value'))
+                    cv = float(correct['value'])
+                    tolerance = correct.get('tolerance', 0.01)
+                    is_correct = abs(uv - cv) <= tolerance
+                except:
+                    is_correct = False
+            elif 'matches' in correct:
+                user_matches = user_answer.get('matches', {})
+                # user_matches dict: key=index left, value=index right
+                is_correct = (user_matches == correct['matches'])
+            elif 'observation' in correct:
+                is_correct = (user_answer.get('observation') == correct['observation'])
+            elif 'error_position' in correct:
+                is_correct = (user_answer.get('error_position') == correct['error_position'] and
+                            user_answer.get('correction', '').strip() == correct['correction'])
+            elif 'keywords' in correct:
+                # открытый ответ: проверяем наличие ключевых слов
+                text = user_answer.get('answer_text', '').lower()
+                keywords = correct.get('keywords', [])
+                is_correct = all(kw in text for kw in keywords)
+            else:
+                is_correct = (user_answer == correct)
+
+            score = max_score if is_correct else 0
+            return is_correct, score, max_score
+
+        elif scoring_type == 'partial':
+            # Для match или других частичных оценок
+            if 'matches' in correct:
+                user_matches = user_answer.get('matches', {})
+                correct_matches = correct['matches']
+                total = len(correct_matches)
+                correct_count = sum(1 for k,v in user_matches.items() if correct_matches.get(k) == v)
+                score = int(max_score * (correct_count / total))
+                is_correct = (score >= max_score // 2)
+                return is_correct, score, max_score
+            # Для других типов с частичной оценкой можно расширить
+
+        # fallback
+        is_correct = (user_answer == correct)
+        score = max_score if is_correct else 0
+        return is_correct, score, max_score
+
+    def save_attempt(self, user_id: uuid.UUID, task_id: int, variant_id: int,
+                     user_answer: dict, lesson_progress_id: int = None) -> TaskAttempt:
+        """
+        Сохраняет попытку выполнения задания, вычисляя результат.
+        """
+        task = self.db.query(Task).filter(Task.id == task_id).first()
+        variant = self.db.query(TaskVariant).filter(TaskVariant.id == variant_id).first()
+        is_correct, score_earned, score_max = self.check_answer(
+            variant, user_answer, task.scoring_type, task.max_score
+        )
+
+        attempt = TaskAttempt(
+            user_id=user_id,
+            task_id=task_id,
+            variant_id=variant_id,
+            user_answer=user_answer,
+            is_correct=is_correct,
+            score_earned=score_earned,
+            score_max=score_max,
+            started_at=datetime.now(),   # упрощённо
+            completed_at=datetime.now(),
+            time_spent=0,
+            hints_used=0,
+            hints_cost=0,
+            lesson_progress_id=lesson_progress_id,
+            attempt_number=1  # позже можно увеличивать
+        )
+        self.db.add(attempt)
+        self.db.commit()
+        return attempt
+```
+
+services/track_service.py ```
+import uuid
+from sqlalchemy.sql import func
+from sqlalchemy.orm import Session
+from database.models.content import Track, Lesson
+from database.models.progress import UserTrackProgress, UserLessonProgress
+from typing import List, Optional
+
+class TrackService:
+    def __init__(self, db: Session):
+        self.db = db
+
+    def get_published_tracks(self) -> List[Track]:
+        """Возвращает все опубликованные треки."""
+        return self.db.query(Track).filter(Track.is_published == True).all()
+
+    def get_track(self, track_id: int) -> Optional[Track]:
+        """Получить трек по ID."""
+        return self.db.query(Track).filter(Track.id == track_id).first()
+
+    def check_track_available(self, user_id: uuid.UUID, track_id: int) -> bool:
+        """Проверить, доступен ли трек пользователю."""
+        # Проверяем, есть ли уже прогресс по этому треку
+        progress = self.db.query(UserTrackProgress).filter(
+            UserTrackProgress.user_id == user_id,
+            UserTrackProgress.track_id == track_id
+        ).first()
+        if progress:
+            # Если прогресс существует, проверяем статус
+            if progress.status == 'completed':
+                # Трек завершён, следующий доступен
+                return True
+            elif progress.status in ('active', 'paused', 'repeating'):
+                # Активен, приостановлен или повторяется - проверяем, не заблокирован ли предыдущий трек
+                prev_track = self.db.query(UserTrackProgress).filter(
+                    UserTrackProgress.user_id == user_id,
+                    UserTrackProgress.track_id == track_id - 1
+                ).first()
+                if prev_track and prev_track.status == 'completed':
+                    return True
+        # Если ничего не найдено или заблокировано
+        return False
+
+    def start_track(self, user_id: uuid.UUID, track_id: int) -> Optional[UserTrackProgress]:
+        """Начать трек для пользователя, создать прогресс."""
+        # Проверяем, нет ли уже записи
+        existing = self.db.query(UserTrackProgress).filter(
+            UserTrackProgress.user_id == user_id,
+            UserTrackProgress.track_id == track_id
+        ).first()
+        if existing:
+            return existing
+        # Создаём новый прогресс
+        new_progress = UserTrackProgress(
+            user_id=user_id,
+            track_id=track_id,
+            status='active',
+            started_at=func.now(),
+            current_lesson_index=0
+        )
+        self.db.add(new_progress)
+        self.db.commit()
+        self.db.refresh(new_progress)
+        
+        # Создаём прогресс для первого урока со статусом available
+        first_lesson = self.db.query(Lesson).filter(
+            Lesson.track_id == track_id
+        ).order_by(Lesson.order_index).first()
+        if first_lesson:
+            first_lesson_progress = UserLessonProgress(
+                user_track_progress_id=new_progress.id,
+                lesson_id=first_lesson.id,
+                status='available',
+                started_at=func.now()
+            )
+            self.db.add(first_lesson_progress)
+            self.db.commit()
+
+        return new_progress
+```
+
+main.py ```
+import sys
+
+from PyQt6.QtWidgets import QApplication
+
+from database.init_db import init_db
+from database.seed import seed_data
+from database.db import SessionLocal
+
+from gui.windows.login_window import LoginWindow
+
+
+def main():
+    init_db()
+    seed_data()
+    
+    app = QApplication(sys.argv)
+    db_session = SessionLocal()
+
+    window = LoginWindow(db_session=db_session)
+    window.show()
+
+    exit_code = app.exec()
+    db_session.close()  # закрываем сессию при выходе
+    sys.exit(exit_code)
+
+
+if __name__ == "__main__":
+    main()
+```
+
+--------------------------------------------------------
