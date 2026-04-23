@@ -1,0 +1,96 @@
+from PyQt6.QtWidgets import (
+    QWidget,
+    QLabel,
+    QPushButton,
+    QVBoxLayout,
+    QHBoxLayout
+)
+
+from PyQt6.QtCore import Qt, QSize
+from PyQt6.QtGui import QIcon
+
+
+class MainMenuWindow(QWidget):
+
+    def __init__(self, user):
+        super().__init__()
+
+        self.user = user
+
+        self.setWindowTitle("Интерактивная химия | Главное меню")
+        self.setFixedSize(500, 400)
+
+        self.init_ui()
+
+    def init_ui(self):
+
+        main_layout = QVBoxLayout()
+
+        top_layout = QHBoxLayout()
+        top_layout.addStretch()
+
+        profile_button = QPushButton("Профиль")
+        profile_button.setIcon(QIcon("C:\\0.0.Diploma2\\profile.png"))
+        profile_button.setIconSize(QSize(32,32))
+        profile_button.clicked.connect(self.open_profile)
+
+        top_layout.addWidget(profile_button)
+
+        title = QLabel("Интерактивная химия")
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        title.setStyleSheet("font-size: 26px; font-weight: bold;")
+
+        menu_layout = QVBoxLayout()
+        menu_layout.setSpacing(15)
+
+        learn_button = QPushButton("Учиться")
+        learn_button.clicked.connect(self.open_learning)
+
+        reference_button = QPushButton("Справочник")
+        reference_button.clicked.connect(self.open_reference)
+
+        reference_button = QPushButton("Доска почёта")
+        reference_button.clicked.connect(self.open_leaderboard)
+
+        reference_button = QPushButton("Настройки")
+        reference_button.clicked.connect(self.open_settings)
+
+        exit_button = QPushButton("Выход")
+        exit_button.clicked.connect(self.logout)
+
+        menu_layout.addWidget(learn_button)
+        menu_layout.addWidget(reference_button)
+        menu_layout.addWidget(exit_button)
+
+        main_layout.addLayout(top_layout)
+        main_layout.addStretch()
+
+        main_layout.addWidget(title)
+
+        main_layout.addSpacing(20)
+        main_layout.addLayout(menu_layout)
+
+        main_layout.addStretch()
+
+        self.setLayout(main_layout)
+
+    def open_profile(self):
+        from gui.windows.profile_window import ProfileWindow
+        self.profile_window = ProfileWindow(self.user)
+        self.profile_window.show()
+        self.close()
+
+    def open_learning(self):
+        print("Открыть обучение")
+
+    def open_reference(self):
+        print("Открыть справочник")
+
+    def open_leaderboard(self):
+        print("Открыть доску почёта")
+
+    def open_settings(self):
+        print("Открыть настройки")
+
+    def logout(self):
+        self.close()
