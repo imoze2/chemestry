@@ -12,10 +12,11 @@ from PyQt6.QtGui import QIcon
 
 class MainMenuWindow(QWidget):
 
-    def __init__(self, user):
+    def __init__(self, user, db_session):
         super().__init__()
 
         self.user = user
+        self.db_session = db_session
 
         self.setWindowTitle("Интерактивная химия | Главное меню")
         self.setFixedSize(500, 400)
@@ -76,12 +77,15 @@ class MainMenuWindow(QWidget):
 
     def open_profile(self):
         from gui.windows.profile_window import ProfileWindow
-        self.profile_window = ProfileWindow(self.user)
+        self.profile_window = ProfileWindow(self.user, self.db_session)
         self.profile_window.show()
         self.close()
 
     def open_learning(self):
-        print("Открыть обучение")
+        from gui.windows.track_selection_window import TrackSelectionWindow
+        self.learning_window = TrackSelectionWindow(self.user, self.db_session)
+        self.learning_window.show()
+        self.close()
 
     def open_reference(self):
         print("Открыть справочник")
@@ -94,6 +98,6 @@ class MainMenuWindow(QWidget):
 
     def logout(self):
         from gui.windows.login_window import LoginWindow
-        self.login_window = LoginWindow()
+        self.login_window = LoginWindow(self.db_session)
         self.login_window.show()
         self.close()

@@ -15,10 +15,11 @@ from PyQt6.QtGui import QPixmap
 
 class ProfileWindow(QWidget):
 
-    def __init__(self, user):
+    def __init__(self, user, db_session):
         super().__init__()
 
         self.user = user
+        self.session = db_session
 
         self.setWindowTitle("Интерактивная химия | Профиль")
         self.setFixedSize(600, 500)
@@ -149,7 +150,7 @@ class ProfileWindow(QWidget):
     def back_to_menu(self):
         from gui.windows.main_window import MainMenuWindow
 
-        self.menu = MainMenuWindow(self.user)
+        self.menu = MainMenuWindow(self.user, self.session)
         self.menu.show()
 
         self.close()
@@ -157,7 +158,7 @@ class ProfileWindow(QWidget):
     def open_friends(self):
         from gui.windows.friends_window import FriendsWindow
 
-        self.friends = FriendsWindow(self.user)
+        self.friends = FriendsWindow(self.user, self.session)
         self.friends.show()
 
         self.close()

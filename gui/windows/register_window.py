@@ -28,8 +28,9 @@ def validate_email(email: str) -> bool:
 
 class RegisterWindow(QWidget):
 
-    def __init__(self):
+    def __init__(self, db_session):
         super().__init__()
+        self.db_session = db_session
 
         self.setWindowTitle("Интерактивная химия | Регистрация")
         self.setFixedSize(400, 350)
@@ -95,7 +96,7 @@ class RegisterWindow(QWidget):
         if success:
             from gui.windows.login_window import LoginWindow
             QMessageBox.information(self, "Success", message)
-            self.login_window = LoginWindow()
+            self.login_window = LoginWindow(db_session=self.db_session)
             self.login_window.show()
             self.close()
 
@@ -104,6 +105,6 @@ class RegisterWindow(QWidget):
 
     def back_to_login(self):
         from gui.windows.login_window import LoginWindow
-        self.login_window = LoginWindow()
+        self.login_window = LoginWindow(db_session=self.db_session)
         self.login_window.show()
         self.close()

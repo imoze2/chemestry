@@ -27,7 +27,7 @@ class Achievement(Base):
 
     is_hidden = Column(Boolean, default=False)
 
-    item_reward = relationship("ItemType", foreign_keys=[item_reward_id])
+    item_reward = relationship("ItemType", foreign_keys=[item_reward_id], overlaps="reward_for_achievements")
     user_achievements = relationship("UserAchievement", back_populates="achievement")
 
 

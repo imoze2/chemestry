@@ -17,8 +17,10 @@ from services.auth_service import AuthService
 
 class LoginWindow(QWidget):
 
-    def __init__(self):
+    def __init__(self, db_session):
         super().__init__()
+
+        self.db_session = db_session
 
         self.setWindowTitle("Интерактивная химия | Вход")
         self.setFixedSize(400, 300)
@@ -59,7 +61,7 @@ class LoginWindow(QWidget):
         self.setLayout(layout)
 
     def open_register(self):
-        self.register_window = RegisterWindow()
+        self.register_window = RegisterWindow(self.db_session)
         self.register_window.show()
         self.close()
 
@@ -71,7 +73,7 @@ class LoginWindow(QWidget):
 
         if success:
             self.close()
-            self.main_window = MainMenuWindow(result)
+            self.main_window = MainMenuWindow(result, self.db_session)
             self.main_window.show()
 
         else:

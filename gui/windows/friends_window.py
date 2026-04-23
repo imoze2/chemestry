@@ -17,10 +17,11 @@ from PyQt6.QtCore import Qt
 
 class FriendsWindow(QWidget):
 
-    def __init__(self, user):
+    def __init__(self, user, db_session):
         super().__init__()
 
         self.user = user
+        self.session = db_session
 
         self.setWindowTitle("Интерактивная химия | Друзья")
         self.setFixedSize(600, 500)
@@ -183,7 +184,7 @@ class FriendsWindow(QWidget):
     def back_to_profile(self):
         from gui.windows.profile_window import ProfileWindow
 
-        self.profile = ProfileWindow(self.user)
+        self.profile = ProfileWindow(self.user, self.session)
         self.profile.show()
 
         self.close()
