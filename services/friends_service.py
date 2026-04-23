@@ -1,6 +1,5 @@
 from database.db import SessionLocal
-from database.models.user import User
-from database.models.friendship import Friendship
+from database.models.user import User, Friendship
 
 
 class FriendsService:

@@ -93,4 +93,7 @@ class MainMenuWindow(QWidget):
         print("Открыть настройки")
 
     def logout(self):
+        from gui.windows.login_window import LoginWindow
+        self.login_window = LoginWindow()
+        self.login_window.show()
         self.close()
