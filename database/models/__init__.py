@@ -13,9 +13,6 @@ from .gamification import (
     Achievement, UserAchievement, Challenge, UserChallenge,
     LeaderboardCategory, LeaderboardEntry
 )
-from .reference import (
-    ReferenceArticle, ReferenceArticleRelation, ReferenceSearchIndex
-)
 
 # Список всех моделей для Alembic или create_all
 __all__ = [
@@ -25,5 +22,4 @@ __all__ = [
     "UserTrackProgress", "UserLessonProgress", "TaskAttempt", "UserTopicStats",
     "Achievement", "UserAchievement", "Challenge", "UserChallenge",
     "LeaderboardCategory", "LeaderboardEntry",
-    "ReferenceArticle", "ReferenceArticleRelation", "ReferenceSearchIndex",
 ]

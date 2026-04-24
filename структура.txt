@@ -1,13 +1,47 @@
 --------------------------------------------------------
 В папке проекта такая архитектура:
 ```0.0.Diploma2/
+- assets/
+-- images/
+---- acid_base_reaction.png
+---- atom_model.png
+---- covalent_bond.png
+---- crystal_lattice.png
+---- electrolysis.png
+---- equilibrium_graph.png
+---- gas_collection.png
+---- ionic_bond.png
+---- metallic_bond.png
+---- organic_molecule.png
+---- periodic_table_mini.png
+---- water_molecule.png
+-- shop/
+---- artifact_burner.png
+---- artifact_crystal_cu.png
+---- artifact_cylinder.png
+---- artifact_dna.png
+---- artifact_erlenmeyer.png
+---- artifact_retort.png
+---- artifact_scales.png
+---- artifact_testtube.png
+---- artifact_thermometer.png
+---- avatar_atom.png
+---- avatar_beaker.png
+---- avatar_crystal.png
+---- avatar_flame.png
+---- avatar_flask.png
+---- showcase_glass.png
+---- showcase_gold.png
+---- showcase_simple.png
+---- theme_blue.png
+---- theme_dark.png
+---- theme_yellow.png
 - database/
 -- models/
 ---- __init__.py
 ---- content.py
 ---- gamification.py
 ---- progress.py
----- reference.py
 ---- user.py
 -- db.py
 -- init_db.py
@@ -15,6 +49,7 @@
 - gui/
 -- styles/
 -- widgets/
+---- molecule_widget.py
 ---- task_widgets.py
 -- windows/
 ---- friends_window.py
@@ -22,16 +57,26 @@
 ---- lesson_window.py
 ---- login_window.py
 ---- main_window.py
+---- profile_settings_window.py
 ---- profile_window.py
 ---- register_window.py
+---- store_window.py
 ---- track_selection_window.py
 - services/
+-- achievement_service.py
 -- auth_service.py
+-- challenge_service.py
+-- currency_service.py
 -- friends_service.py
+-- leaderboard_service.py
 -- lesson_service.py
 -- progress_service.py
+-- shop_service.py
+-- spaced_repetition_service.py
+-- statistics_service.py
 -- task_service.py
 -- track_service.py
+- basedir.py
 - main.py
 - profile.png
 ```
@@ -52,9 +97,6 @@ from .gamification import (
     Achievement, UserAchievement, Challenge, UserChallenge,
     LeaderboardCategory, LeaderboardEntry
 )
-from .reference import (
-    ReferenceArticle, ReferenceArticleRelation, ReferenceSearchIndex
-)
 
 # Список всех моделей для Alembic или create_all
 __all__ = [
@@ -64,7 +106,6 @@ __all__ = [
     "UserTrackProgress", "UserLessonProgress", "TaskAttempt", "UserTopicStats",
     "Achievement", "UserAchievement", "Challenge", "UserChallenge",
     "LeaderboardCategory", "LeaderboardEntry",
-    "ReferenceArticle", "ReferenceArticleRelation", "ReferenceSearchIndex",
 ]
 ```
 
@@ -281,6 +322,7 @@ class UserAchievement(Base):
     achievement_id = Column(Integer, ForeignKey("achievements.id", ondelete="CASCADE"), nullable=False)
     unlocked_at = Column(DateTime, server_default=func.now())
     shown_to_user = Column(Boolean, default=False)
+    is_displayed = Column(Boolean, default=True)
 
     user = relationship("User", back_populates="achievements")
     achievement = relationship("Achievement", back_populates="user_achievements")
@@ -476,81 +518,6 @@ class UserTopicStats(Base):
     user = relationship("User", back_populates="topic_stats")
 ```
 
-database/models/reference.py ```
-# database/models/reference.py
-from sqlalchemy import (
-    Column, Integer, String, DateTime, ForeignKey, Text, UniqueConstraint
-)
-from sqlalchemy.dialects.postgresql import JSONB, ARRAY, TSVECTOR
-from sqlalchemy.sql import func
-from sqlalchemy.orm import relationship
-from database.db import Base
-
-
-class ReferenceArticle(Base):
-    __tablename__ = "reference_articles"
-
-    id = Column(Integer, primary_key=True)
-    title = Column(String(200), nullable=False)
-    content = Column(JSONB, nullable=False)
-    summary = Column(Text)
-
-    category = Column(String(50))
-    topic_tags = Column(ARRAY(Text))
-
-    search_keywords = Column(ARRAY(Text))
-    chemical_formulas = Column(ARRAY(Text))
-
-    required_lesson_id = Column(Integer, ForeignKey("lessons.id"))
-
-    difficulty_level = Column(Integer)  # 1-3
-
-    created_at = Column(DateTime, server_default=func.now())
-    updated_at = Column(DateTime, onupdate=func.now())
-
-    # связи с другими статьями
-    related_from = relationship(
-        "ReferenceArticleRelation",
-        foreign_keys="ReferenceArticleRelation.article_id",
-        back_populates="article",
-        cascade="all, delete-orphan"
-    )
-    related_to = relationship(
-        "ReferenceArticleRelation",
-        foreign_keys="ReferenceArticleRelation.related_article_id",
-        back_populates="related_article",
-        cascade="all, delete-orphan"
-    )
-    search_index = relationship("ReferenceSearchIndex", back_populates="article", uselist=False, cascade="all, delete-orphan")
-
-
-class ReferenceArticleRelation(Base):
-    __tablename__ = "reference_article_relations"
-    __table_args__ = (
-        UniqueConstraint("article_id", "related_article_id", name="unique_article_relation"),
-    )
-
-    id = Column(Integer, primary_key=True)
-    article_id = Column(Integer, ForeignKey("reference_articles.id", ondelete="CASCADE"), nullable=False)
-    related_article_id = Column(Integer, ForeignKey("reference_articles.id", ondelete="CASCADE"), nullable=False)
-
-    article = relationship("ReferenceArticle", foreign_keys=[article_id], back_populates="related_from")
-    related_article = relationship("ReferenceArticle", foreign_keys=[related_article_id], back_populates="related_to")
-
-
-class ReferenceSearchIndex(Base):
-    __tablename__ = "reference_search_index"
-
-    id = Column(Integer, primary_key=True)
-    article_id = Column(Integer, ForeignKey("reference_articles.id", ondelete="CASCADE"), nullable=False)
-    search_vector = Column(TSVECTOR)
-    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
-
-    article = relationship("ReferenceArticle", back_populates="search_index")
-
-    # Индекс создадим отдельно через сырой SQL при инициализации БД
-```
-
 database/models/user.py ```
 # database/models/user.py
 import uuid
@@ -628,6 +595,7 @@ class ItemType(Base):
     icon_url = Column(String(255))
     max_stack = Column(Integer, default=1)
     is_purchasable = Column(Boolean, default=True)
+    capacity = Column(Integer, default=0)
 
     shop_items = relationship("ShopItem", back_populates="item_type")
     inventories = relationship("UserInventory", back_populates="item_type")
@@ -757,15 +725,6 @@ def init_db():
     # Создаём все таблицы, если их нет
     Base.metadata.create_all(bind=engine)
 
-    # Создаём дополнительные индексы, которые SQLAlchemy не создаёт автоматически
-    with engine.connect() as conn:
-        # GIN индекс для полнотекстового поиска в справочнике
-        conn.execute(text("""
-            CREATE INDEX IF NOT EXISTS idx_reference_search
-            ON reference_search_index USING GIN(search_vector);
-        """))
-        conn.commit()
-
 if __name__ == "__main__":
     init_db()
     print("База данных инициализирована.")
@@ -775,115 +734,194 @@ database/seed.py ```
 # database/seed.py
 import json
 from database.db import SessionLocal
-from database.models.content import Track, Lesson, LessonVersion, Theory, LessonTheory, Task, LessonTask, TaskGenerator, TaskVariant
-from database.models.user import User
-from sqlalchemy.sql import func
-import uuid
+from database.models.content import (
+    Track, Lesson, LessonVersion, Theory, LessonTheory,
+    TaskGenerator, Task, TaskVariant, LessonTask
+)
+from database.models.user import ItemType, ShopItem
+from database.models.gamification import Achievement
+from sqlalchemy import text
 import random
+
+def clear_content(db):
+    """Удаляем все данные контента в правильном порядке, чтобы избежать FK ошибок"""
+    db.execute(text("DELETE FROM lesson_tasks"))
+    db.execute(text("DELETE FROM task_variants"))
+    db.execute(text("DELETE FROM tasks"))
+    db.execute(text("DELETE FROM task_generators"))
+    db.execute(text("DELETE FROM lesson_theory"))
+    db.execute(text("DELETE FROM theory"))
+    db.execute(text("DELETE FROM lesson_versions"))
+    db.execute(text("DELETE FROM lessons"))
+    db.execute(text("DELETE FROM tracks"))
+    db.commit()
+
+def seed_shop_data(db):
+    """Заполняет типы предметов и товары магазина."""
+    # Проверяем, есть ли уже предметы
+    if db.query(ItemType).count() > 0:
+        return  # уже есть
+
+    # ---- Аватары ----
+    avatars = [
+        ("Атом", "avatar", "Аватар с изображением атома", "assets/shop/avatar_atom.png", 1),
+        ("Колба", "avatar", "Аватар с колбой", "assets/shop/avatar_flask.png", 1),
+        ("Мензурка", "avatar", "Аватар с мензуркой", "assets/shop/avatar_beaker.png", 1),
+        ("Кристалл", "avatar", "Аватар с кристаллом", "assets/shop/avatar_crystal.png", 1),
+        ("Пламя", "avatar", "Аватар с огнём", "assets/shop/avatar_flame.png", 1),
+    ]
+    for name, cat, desc, icon, stack in avatars:
+        item_type = ItemType(name=name, category=cat, description=desc, icon_url=icon, max_stack=stack)
+        db.add(item_type)
+        db.flush()
+        db.add(ShopItem(item_type_id=item_type.id, price_coins=50, price_crystals=0, is_active=True))
+
+    # ---- Темы профиля ----
+    themes = [
+        ("Классическая", "profile_theme", "Стандартная тема оформления", "assets/shop/theme_classic.png"),
+        ("Кислотный жёлтый", "profile_theme", "Яркая жёлтая тема", "assets/shop/theme_yellow.png"),
+        ("Неоновый синий", "profile_theme", "Тема в синих тонах", "assets/shop/theme_blue.png"),
+        ("Тёмный реактив", "profile_theme", "Тёмная тема с зелёными акцентами", "assets/shop/theme_dark.png"),
+    ]
+    for name, cat, desc, icon in themes:
+        item_type = ItemType(name=name, category=cat, description=desc, icon_url=icon, max_stack=1)
+        db.add(item_type)
+        db.flush()
+        db.add(ShopItem(item_type_id=item_type.id, price_coins=100, price_crystals=0, is_active=True))
+
+    # ---- Витрины ----
+    showcases = [
+        ("Простая полка", "showcase", "Деревянная полка на 2 предмета", "assets/shop/showcase_simple.png", 2),
+        ("Стеклянный шкаф", "showcase", "Стеклянная витрина на 3 предмета", "assets/shop/showcase_glass.png", 3),
+        ("Золотая витрина", "showcase", "Роскошная витрина на 5 предметов", "assets/shop/showcase_gold.png", 5),
+    ]
+    for name, cat, desc, icon, cap in showcases:
+        item_type = ItemType(name=name, category=cat, description=desc, icon_url=icon, max_stack=1, capacity=cap)
+        db.add(item_type)
+        db.flush()
+        db.add(ShopItem(item_type_id=item_type.id, price_coins=200, price_crystals=10, is_active=True))
+
+    # ---- Артефакты ----
+    artifacts = [
+        ("Колба Эрленмейера", "artifact", "Коническая колба для титрования", "assets/shop/artifact_erlenmeyer.png"),
+        ("Мерный цилиндр", "artifact", "Точный измерительный прибор", "assets/shop/artifact_cylinder.png"),
+        ("Кристалл меди", "artifact", "Красивый синий кристалл", "assets/shop/artifact_crystal_cu.png"),
+        ("Модель ДНК", "artifact", "Двойная спираль", "assets/shop/artifact_dna.png"),
+        ("Пробирка с газом", "artifact", "Пробирка с дымящимся газом", "assets/shop/artifact_testtube.png"),
+        ("Весы", "artifact", "Аналитические весы", "assets/shop/artifact_scales.png"),
+        ("Горелка Бунзена", "artifact", "Спиртовка для нагрева", "assets/shop/artifact_burner.png"),
+        ("Термометр", "artifact", "Измеряет температуру", "assets/shop/artifact_thermometer.png"),
+        ("Реторта", "artifact", "Старинный перегонный аппарат", "assets/shop/artifact_retort.png"),
+    ]
+    for name, cat, desc, icon in artifacts:
+        item_type = ItemType(name=name, category=cat, description=desc, icon_url=icon, max_stack=1)
+        db.add(item_type)
+        db.flush()
+        db.add(ShopItem(item_type_id=item_type.id, price_coins=75, price_crystals=5, is_active=True))
+    db.commit()
+    print("Магазин заполнен.")
+
+def seed_achievements(db):
+    """Создаёт базовый набор достижений."""
+    if db.query(Achievement).count() > 0:
+        return
+    achievements_data = [
+        {"code": "first_lesson", "name": "Первая реакция", "desc": "Завершите один урок.",
+         "icon": "assets/achievements/first_lesson.png", "cond_type": "complete_lesson", "cond_data": {"count": 1},
+         "xp": 50, "coins": 30, "crystals": 0},
+        {"code": "five_lessons", "name": "Начинающий алхимик", "desc": "Завершите 5 уроков.",
+         "icon": "assets/achievements/five_lessons.png", "cond_type": "complete_lesson", "cond_data": {"count": 5},
+         "xp": 100, "coins": 50, "crystals": 5},
+        {"code": "balance_master", "name": "Мастер уравнений", "desc": "Решите 10 задач на балансировку уравнений.",
+         "icon": "assets/achievements/balance_master.png", "cond_type": "count_tasks_by_type", "cond_data": {"type": "balance_equation", "count": 10},
+         "xp": 150, "coins": 100, "crystals": 10},
+        {"code": "accuracy_90", "name": "С точностью до молекулы", "desc": "Достигните точности >90% после 20 заданий.",
+         "icon": "assets/achievements/accuracy_90.png", "cond_type": "accuracy", "cond_data": {"threshold": 0.9, "min_attempts": 20},
+         "xp": 200, "coins": 150, "crystals": 15},
+        {"code": "streak_7", "name": "Железная воля", "desc": "Заходите в приложение 7 дней подряд.",
+         "icon": "assets/achievements/streak_7.png", "cond_type": "streak", "cond_data": {"days": 7},
+         "xp": 100, "coins": 50, "crystals": 5},
+        {"code": "collector_5", "name": "Коллекционер", "desc": "Купите 5 предметов в магазине.",
+         "icon": "assets/achievements/collector_5.png", "cond_type": "collect_items", "cond_data": {"count": 5},
+         "xp": 80, "coins": 40, "crystals": 0},
+        {"code": "showcase_decor", "name": "Витринных дел мастер", "desc": "Разместите 3 артефакта в витрине.",
+         "icon": "assets/achievements/showcase_decor.png", "cond_type": "showcase_artifacts", "cond_data": {"count": 3},
+         "xp": 120, "coins": 80, "crystals": 8},
+        {"code": "speed_solver", "name": "Быстрый ум", "desc": "Решите задание менее чем за 10 секунд.",
+         "icon": "assets/achievements/speed_solver.png", "cond_type": "speed", "cond_data": {"max_seconds": 10},
+         "xp": 150, "coins": 100, "crystals": 10},
+    ]
+    for a in achievements_data:
+        ach = Achievement(
+            code=a["code"], name=a["name"], description=a["desc"],
+            icon_url=a["icon"], condition_type=a["cond_type"], condition_data=a["cond_data"],
+            xp_reward=a["xp"], coins_reward=a["coins"], crystals_reward=a["crystals"]
+        )
+        db.add(ach)
+    db.commit()
+    print("Достижения созданы.")
 
 def seed_data():
     db = SessionLocal()
 
-    # Проверим, есть ли уже треки
+    # Проверяем, есть ли уже треки, и если да – удаляем всё для чистого старта
     if db.query(Track).count() > 0:
-        print("Данные уже есть в БД, пропускаем заполнение.")
-        return
+        print("Удаляем существующий контент...")
+        clear_content(db)
+        print("Создаём новый контент.")
 
-    # 1. Создаём треки
-    track8 = Track(name="Химия 8 класс", description="Базовый курс химии для 8 класса", is_published=True)
-    track9 = Track(name="Химия 9 класс", description="Продвинутый курс для 9 класса", is_published=True)
+    # ======================= ТРЕКИ =======================
+    track8 = Track(name="Химия. 8 класс", description="Базовый курс химии для 8 класса", is_published=True)
+    track9 = Track(name="Химия. 9 класс", description="Продвинутый курс для 9 класса", is_published=True)
     db.add_all([track8, track9])
     db.commit()
 
-    # 2. Уроки для 8 класса
-    lesson8_1 = Lesson(track_id=track8.id, order_index=0)
-    lesson8_2 = Lesson(track_id=track8.id, order_index=1)
-    db.add_all([lesson8_1, lesson8_2])
-    db.commit()
-
-    # 3. Версии уроков
-    ver8_1 = LessonVersion(
-        version_of=lesson8_1.id,
-        title="Введение. Вещества и их свойства",
-        estimated_time=30,
-        xp_reward=50,
-        version_number=1,
-        is_active=True
-    )
-    ver8_2 = LessonVersion(
-        version_of=lesson8_2.id,
-        title="Атомы и молекулы",
-        estimated_time=45,
-        xp_reward=75,
-        version_number=1,
-        is_active=True
-    )
-    db.add_all([ver8_1, ver8_2])
-    db.commit()
-
-    # 4. Теория
-    theory1 = Theory(
-        data=json.dumps({
-            "blocks": [
-                {"type": "text", "content": "Химия — наука о веществах, их свойствах и превращениях."},
-                {"type": "text", "content": "Вещества состоят из молекул, а молекулы — из атомов."},
-                {"type": "image", "src": "assets/atoms.png", "caption": "Модель атома"}
-            ]
-        }),
-        topic_tags=["введение", "вещества"],
-        estimated_time=15
-    )
-    theory2 = Theory(
-        data=json.dumps({
-            "blocks": [
-                {"type": "text", "content": "Атом — мельчайшая частица химического элемента."},
-                {"type": "text", "content": "Молекула — наименьшая частица вещества, обладающая его химическими свойствами."}
-            ]
-        }),
-        topic_tags=["атомы", "молекулы"],
-        estimated_time=20
-    )
-    db.add_all([theory1, theory2])
-    db.commit()
-
-    # 5. Связь теории с уроками
-    lt1 = LessonTheory(lesson_id=lesson8_1.id, theory_id=theory1.id, order_index=1, is_required=True)
-    lt2 = LessonTheory(lesson_id=lesson8_2.id, theory_id=theory2.id, order_index=1, is_required=True)
-    db.add_all([lt1, lt2])
-    db.commit()
-
-    # ---------- Создаём несколько генераторов для разных типов ----------
-    # Генератор для choice
-    gen_choice = TaskGenerator(
+    # ======================= ГЕНЕРАТОРЫ ЗАДАНИЙ =======================
+    # Generator for 'choice'
+    gen_choice_8 = TaskGenerator(
         type='choice',
         template_data={
             "questions": [
-                {"text": "Какая частица является наименьшей частицей вещества?", 
-                 "options": ["Атом", "Молекула", "Электрон", "Ядро"], "correct_index": 1},
-                {"text": "Что такое валентность?", 
-                 "options": ["Число связей", "Масса атома", "Заряд ядра", "Число протонов"], "correct_index": 0},
+                {"text": "Какая частица является наименьшей частицей вещества?", "options": ["Атом", "Молекула", "Электрон", "Ядро"], "correct_index": 1},
+                {"text": "Что такое валентность?", "options": ["Число связей", "Масса атома", "Заряд ядра", "Число протонов"], "correct_index": 0},
+                {"text": "Какое из перечисленных веществ является простым?", "options": ["Вода", "Углекислый газ", "Кислород", "Поваренная соль"], "correct_index": 2},
             ]
         },
         difficulty=2,
         topic_tags=["вещество", "атомы"]
     )
-    db.add(gen_choice)
+    db.add(gen_choice_8)
 
-    # Генератор для balance_equation
+    gen_choice_9 = TaskGenerator(
+        type='choice',
+        template_data={
+            "questions": [
+                {"text": "Какой металл является самым лёгким?", "options": ["Алюминий", "Литий", "Натрий", "Калий"], "correct_index": 1},
+                {"text": "Какая кислота содержится в желудочном соке?", "options": ["Серная", "Соляная", "Азотная", "Уксусная"], "correct_index": 1},
+                {"text": "Какой элемент имеет символ 'Fe'?", "options": ["Фтор", "Фосфор", "Железо", "Франций"], "correct_index": 2},
+            ]
+        },
+        difficulty=2,
+        topic_tags=["металлы", "элементы"]
+    )
+    db.add(gen_choice_9)
+
     gen_balance = TaskGenerator(
         type='balance_equation',
         template_data={
             "equations": [
                 {"reactants": ["H2", "O2"], "products": ["H2O"], "coefficients": [2, 1, 2]},
                 {"reactants": ["Na", "Cl2"], "products": ["NaCl"], "coefficients": [2, 1, 2]},
+                {"reactants": ["Ca", "O2"], "products": ["CaO"], "coefficients": [2, 1, 2]},
+                {"reactants": ["HCl", "NaOH"], "products": ["NaCl", "H2O"], "coefficients": [1, 1, 1, 1]},
+                {"reactants": ["Fe", "S"], "products": ["FeS"], "coefficients": [1, 1, 1]},
             ]
         },
         difficulty=3,
-        topic_tags=["уравнения"]
+        topic_tags=["уравнения", "реакции"]
     )
     db.add(gen_balance)
 
-    # Генератор для calculation
     gen_calc = TaskGenerator(
         type='calculation',
         template_data={
@@ -893,6 +931,12 @@ def seed_data():
                     "question_template": "Вычислите количество вещества (моль), если масса вещества {mass} г, молярная масса {molar_mass} г/моль.",
                     "expression": "mass / molar_mass",
                     "tolerance": 0.01
+                },
+                {
+                    "params": {"mass_solute": [5, 50], "mass_solution": [100, 500]},
+                    "question_template": "В растворе массой {mass_solution} г содержится {mass_solute} г соли. Найдите массовую долю соли (в процентах).",
+                    "expression": "(mass_solute / mass_solution) * 100",
+                    "tolerance": 0.1
                 }
             ]
         },
@@ -900,123 +944,593 @@ def seed_data():
         topic_tags=["расчеты"]
     )
     db.add(gen_calc)
-
     db.commit()
 
-    # ---------- Создаём задания, привязанные к генераторам или со статическими вариантами ----------
-    tasks_data = [
-        # type, generator, static_variants (если не генератор)
-        {'type': 'choice', 'generator': gen_choice, 'max_score': 1, 'topic_tags': ['атомы']},
-        {'type': 'true_false', 'static_variants': [
-            {"variant_data": {"question_text": "Вода состоит из молекул H2O."}, "correct_answer": {"answer": True}},
-            {"variant_data": {"question_text": "Кислород — это металл."}, "correct_answer": {"answer": False}},
-        ], 'max_score': 1},
-        {'type': 'match', 'static_variants': [
-            {"variant_data": {"left_items": ["H2O", "CO2", "NaCl"], 
-                              "right_items": ["вода", "углекислый газ", "поваренная соль"]},
-             "correct_answer": {"matches": {"0": 0, "1": 1, "2": 2}}},
-        ]},
-        {'type': 'fill_blank', 'static_variants': [
-            {"variant_data": {"text": "Химическая формула воды — ______."}, "correct_answer": {"answer": "H2O"}},
-        ]},
-        {'type': 'balance_equation', 'generator': gen_balance},
-        {'type': 'predict_product', 'static_variants': [
-            {"variant_data": {"reactants": ["NaOH", "HCl"]}, "correct_answer": {"products": ["NaCl", "H2O"]}},
-        ]},
-        {'type': 'classify', 'static_variants': [
-            {"variant_data": {"item_name": "NaCl", "options": ["оксид", "кислота", "соль", "основание"]},
-             "correct_answer": {"class": "соль"}},
-        ]},
-        {'type': 'calculation', 'generator': gen_calc, 'max_score': 1, 'scoring_type': 'binary'},
-        {'type': 'chain_transform', 'static_variants': [
-            {"variant_data": {"starting_material": "CuO", "steps": [
-                {"reagent": "H2SO4", "product": "CuSO4"},
-                {"reagent": "Fe", "product": "Cu"}
-            ]},
-            "correct_answer": {"products": [["CuSO4"], ["Cu"]]}},
-        ]},
-        {'type': 'virtual_lab', 'static_variants': [
-            {"variant_data": {"name": "Реакция нейтрализации", "reagents": ["NaOH", "HCl"], 
-                              "procedure": "Смешайте растворы.", "observations": ["Выделение газа", "Изменение цвета", "Ничего"]},
-             "correct_answer": {"observation": "Ничего"}},
-        ]},
-        {'type': 'puzzle', 'static_variants': [
-            {"variant_data": {"clues": ["Самый лёгкий газ."]}, "correct_answer": {"answer": "водород"}},
-        ]},
-        {'type': 'timed', 'static_variants': [
-            {"variant_data": {"text": "Сколько протонов в атоме углерода?", "time_limit": 10},
-             "correct_answer": {"answer": "6"}},
-        ]},
-    ]
+    # ======================= УРОКИ И ТЕОРИЯ =======================
+    # Вспомогательная функция для создания полного урока
+    def create_lesson(track, order, title, theory_blocks=None, tasks_data=None, xp=50, est_time=30, is_test=False):
+        lesson = Lesson(track_id=track.id, order_index=order)
+        db.add(lesson)
+        db.flush()
 
-    for td in tasks_data:
+        version = LessonVersion(
+            version_of=lesson.id,
+            title=title,
+            estimated_time=est_time,
+            xp_reward=xp,
+            version_number=1,
+            is_active=True
+        )
+        db.add(version)
+        db.flush()
+
+        # Теория, если не тест
+        if not is_test and theory_blocks:
+            # Создаём одну запись Theory, содержащую все блоки
+            theory = Theory(
+                data=json.dumps({"blocks": theory_blocks}),
+                topic_tags=[title],
+                estimated_time=15
+            )
+            db.add(theory)
+            db.flush()
+            lt = LessonTheory(lesson_id=lesson.id, theory_id=theory.id, order_index=1, is_required=True)
+            db.add(lt)
+
+        # Задания
+        if tasks_data:
+            for idx, td in enumerate(tasks_data):
+                # Задание может быть создано заранее или создаём сейчас
+                if 'task' in td:
+                    task = td['task']
+                else:
+                    task = create_task_from_data(td)
+                # Связываем с уроком
+                lt = LessonTask(
+                    lesson_id=lesson.id,
+                    task_id=task.id,
+                    order_index=idx + 1,
+                    is_required=td.get('is_required', True)
+                )
+                db.add(lt)
+        db.commit()
+        return lesson
+
+    def create_task_from_data(td):
+        """Создаёт Task и, если нужно, варианты, на основе словаря td"""
         task = Task(
             type=td['type'],
-            source_type='generated' if 'generator' in td else 'static',
-            generator_id=td.get('generator', None).id if 'generator' in td else None,
-            question_text=f"Задание типа {td['type']}",
-            data={},
-            correct_answers={},
-            scoring_type='binary' if not td['type'] == 'match' else 'partial',
+            source_type=td.get('source_type', 'static'),
+            generator_id=td.get('generator_id'),
+            question_text=td.get('question_text', f'Задание типа {td["type"]}'),
+            data=td.get('data', {}),
+            correct_answers=td.get('correct_answers', {}),
+            scoring_type=td.get('scoring_type', 'binary'),
             max_score=td.get('max_score', 1),
-            topic_tags=td.get('topic_tags', []),
+            topic_tags=td.get('topic_tags', [])
         )
         db.add(task)
-        db.flush()  # чтобы получить task.id
+        db.flush()
 
-        if 'static_variants' in td:
-            for var in td['static_variants']:
+        if 'variants' in td:
+            for var in td['variants']:
                 variant = TaskVariant(
                     base_task_id=task.id,
-                    variant_data=var['variant_data'],
-                    correct_answer=var['correct_answer'],
+                    variant_data=var.get('variant_data', {}),
+                    correct_answer=var.get('correct_answer', {}),
+                    usage_count=0
                 )
                 db.add(variant)
+        db.commit()
+        return task
 
-    db.commit()
+    # ========================= ТЕОРИЯ И ЗАДАНИЯ ДЛЯ УРОКОВ =========================
+    # Для сокращения дублирования блоки теории и данные заданий будем описывать в структурах
 
-    # Привязываем задания к урокам (например, к первому уроку 8 класса)
-    lesson = db.query(Lesson).filter(Lesson.order_index == 0).first()
-    tasks = db.query(Task).all()
-    for i, t in enumerate(tasks):
-        lt = LessonTask(lesson_id=lesson.id, task_id=t.id, order_index=i, is_required=True)
-        db.add(lt)
-    db.commit()
-
-    # 8. Для 9 класса тоже что-то добавим
-    lesson9_1 = Lesson(track_id=track9.id, order_index=0)
-    db.add(lesson9_1)
-    db.commit()
-
-    ver9_1 = LessonVersion(
-        version_of=lesson9_1.id,
-        title="Периодический закон",
-        estimated_time=40,
-        xp_reward=80,
-        version_number=1,
-        is_active=True
+    # 8 КЛАСС
+    # Урок 1
+    create_lesson(track8, 0, "Предмет химии. Вещества",
+        theory_blocks=[
+            {"type": "text", "content": "Химия — это наука о веществах, их свойствах, строении и взаимных превращениях. Вещества — это то, из чего состоят физические тела. Например, вода, сахар, железо — это вещества, а капля воды, кусочек сахара — это тела."},
+            {"type": "text", "content": "Вещества делятся на простые и сложные. Простые вещества состоят из атомов одного химического элемента (например, кислород O₂, железо Fe). Сложные вещества — из атомов разных элементов (вода H₂O, углекислый газ CO₂). Химия изучает превращения одних веществ в другие."},
+            {"type": "molecule", "data": {"atoms": [{"element": "H", "x": 0, "y": 0}, {"element": "O", "x": 100, "y": 0}, {"element": "H", "x": 50, "y": 86}], "bonds": [{"from": 0, "to": 1, "order": 1}, {"from": 1, "to": 2, "order": 1}]}, "caption": "Молекула воды"}
+        ],
+        tasks_data=[
+            {'type': 'choice', 'source_type': 'generated', 'generator_id': gen_choice_8.id, 'scoring_type': 'binary', 'topic_tags': ['вещество']},
+            {'type': 'true_false', 'variants': [
+                {"variant_data": {"question_text": "Вода — простое вещество."}, "correct_answer": {"answer": False}},
+                {"variant_data": {"question_text": "Кислород — простое вещество."}, "correct_answer": {"answer": True}},
+            ], 'topic_tags': ['вещество']},
+            {'type': 'fill_blank', 'variants': [
+                {"variant_data": {"text": "Химическая формула поваренной соли — ______."}, "correct_answer": {"answer": "NaCl"}},
+            ], 'topic_tags': ['формулы']}
+        ]
     )
-    db.add(ver9_1)
-    db.commit()
 
-    theory3 = Theory(
-        data=json.dumps({
-            "blocks": [
-                {"type": "text", "content": "Периодический закон Д.И. Менделеева..."}
-            ]
-        }),
-        topic_tags=["периодический_закон"],
-        estimated_time=25
+    # Урок 2
+    create_lesson(track8, 1, "Строение атома",
+        theory_blocks=[
+            {"type": "text", "content": "Атом — мельчайшая химически неделимая частица вещества. Атом состоит из ядра и электронной оболочки. Ядро содержит протоны (положительный заряд) и нейтроны (без заряда). Вокруг ядра движутся электроны (отрицательный заряд). Число протонов определяет химический элемент."},
+            {"type": "image", "src": "assets/images/atom_model.png", "caption": "Планетарная модель атома"},
+            {"type": "text", "content": "Порядковый номер элемента в таблице Менделеева равен заряду ядра и числу протонов. Например, углерод имеет 6 протонов, значит, его порядковый номер — 6. Массовое число равно сумме протонов и нейтронов."}
+        ],
+        tasks_data=[
+            {'type': 'choice', 'source_type': 'generated', 'generator_id': gen_choice_8.id},
+            {'type': 'fill_blank', 'variants': [
+                {"variant_data": {"text": "Атом углерода имеет 6 протонов, значит его порядковый номер — ______."}, "correct_answer": {"answer": "6"}},
+            ]},
+            {'type': 'calculation', 'source_type': 'generated', 'generator_id': gen_calc.id, 'scoring_type': 'binary'}
+        ]
     )
-    db.add(theory3)
-    db.commit()
-    LessonTheory(lesson_id=lesson9_1.id, theory_id=theory3.id, order_index=1, is_required=True)
-    db.commit()
 
-    print("Тестовые данные успешно добавлены.")
+    # Урок 3
+    create_lesson(track8, 2, "Ионная химическая связь",
+        theory_blocks=[
+            {"type": "text", "content": "Ионная связь образуется между металлами и неметаллами за счёт передачи электронов от металла к неметаллу. При этом образуются положительные и отрицательные ионы, которые притягиваются. Например, в хлориде натрия (NaCl) атом натрия отдаёт один электрон атому хлора."},
+            {"type": "image", "src": "assets/images/ionic_bond.png", "caption": "Схема образования ионной связи в NaCl"},
+            {"type": "text", "content": "Ионные вещества твёрдые, имеют высокие температуры плавления, часто растворимы в воде и проводят ток в растворах и расплавах."}
+        ],
+        tasks_data=[
+            {'type': 'true_false', 'variants': [
+                {"variant_data": {"question_text": "Ионная связь характерна для пары Na и Cl."}, "correct_answer": {"answer": True}},
+                {"variant_data": {"question_text": "Связь в молекуле H₂O — ионная."}, "correct_answer": {"answer": False}},
+            ]},
+            {'type': 'match', 'variants': [
+                {"variant_data": {
+                    "left_items": ["NaCl", "MgO", "KBr"],
+                    "right_items": ["хлорид натрия", "оксид магния", "бромид калия"]
+                 }, "correct_answer": {"matches": {"0": 0, "1": 1, "2": 2}}}
+            ]},
+            {'type': 'fill_blank', 'variants': [
+                {"variant_data": {"text": "При образовании ионной связи металл ______ электроны."}, "correct_answer": {"answer": "отдаёт"}},
+            ]}
+        ]
+    )
+
+    # Урок 4 (ковалентная связь)
+    create_lesson(track8, 3, "Ковалентная химическая связь",
+        theory_blocks=[
+            {"type": "text", "content": "Ковалентная связь образуется за счёт общих электронных пар между двумя неметаллами. Если электронные пары смещены к одному из атомов, связь полярная (например, HCl, H₂O). Если не смещены — неполярная (H₂, O₂, N₂)."},
+            {"type": "image", "src": "assets/images/covalent_bond.png", "caption": "Перекрывание орбиталей в H₂"},
+        ],
+        tasks_data=[
+            {'type': 'choice', 'source_type': 'generated', 'generator_id': gen_choice_8.id},
+            {'type': 'classify', 'variants': [
+                {"variant_data": {"item_name": "HCl", "options": ["ионная", "ковалентная полярная", "ковалентная неполярная", "металлическая"]}, "correct_answer": {"class": "ковалентная полярная"}},
+                {"variant_data": {"item_name": "NaF", "options": ["ионная", "ковалентная полярная", "ковалентная неполярная", "металлическая"]}, "correct_answer": {"class": "ионная"}},
+            ]},
+        ]
+    )
+
+    # Урок 5 (оксиды)
+    create_lesson(track8, 4, "Классы неорганических веществ: оксиды",
+        theory_blocks=[
+            {"type": "text", "content": "Оксиды — это сложные вещества, состоящие из двух элементов, один из которых кислород в степени окисления –2. Оксиды делятся на основные (металл + кислород, например CaO), кислотные (неметалл + кислород, CO₂, SO₃) и амфотерные (Al₂O₃, ZnO)."},
+            {"type": "text", "content": "Основные оксиды реагируют с кислотами, кислотные — со щелочами, амфотерные — и с кислотами, и со щелочами."}
+        ],
+        tasks_data=[
+            {'type': 'classify', 'variants': [
+                {"variant_data": {"item_name": "CO₂", "options": ["основный", "кислотный", "амфотерный", "несолеобразующий"]}, "correct_answer": {"class": "кислотный"}},
+                {"variant_data": {"item_name": "MgO", "options": ["основный", "кислотный", "амфотерный", "несолеобразующий"]}, "correct_answer": {"class": "основный"}},
+            ]},
+            {'type': 'choice', 'variants': [
+                {"variant_data": {"question_text": "Выберите кислотный оксид:", "options": ["CaO", "SO₂", "Na₂O", "K₂O"]}, "correct_answer": {"answer": 1}},
+            ]},
+        ]
+    )
+
+    # Урок 6 (кислоты и основания)
+    create_lesson(track8, 5, "Кислоты и основания",
+        theory_blocks=[
+            {"type": "text", "content": "Кислоты — это электролиты, которые при диссоциации образуют катионы водорода и анионы кислотного остатка. Примеры: HCl, H₂SO₄, HNO₃. Основания — электролиты, образующие гидроксид-анионы OH⁻: NaOH, Ca(OH)₂."},
+            {"type": "image", "src": "assets/images/acid_base_reaction.png", "caption": "Реакция нейтрализации"}
+        ],
+        tasks_data=[
+            {'type': 'match', 'variants': [
+                {"variant_data": {"left_items": ["HCl", "NaOH", "H₂SO₄"], "right_items": ["соляная кислота", "гидроксид натрия", "серная кислота"]}, "correct_answer": {"matches": {"0": 0, "1": 1, "2": 2}}}
+            ]},
+            {'type': 'true_false', 'variants': [
+                {"variant_data": {"question_text": "NaOH — это кислота."}, "correct_answer": {"answer": False}},
+            ]},
+        ]
+    )
+
+    # Урок 7 (соли)
+    create_lesson(track8, 6, "Соли: состав и номенклатура",
+        theory_blocks=[
+            {"type": "text", "content": "Соли — продукты замещения водорода в кислоте на металл. Название соли складывается из названия кислотного остатка и металла. Например, NaCl — хлорид натрия, CaSO₄ — сульфат кальция."}
+        ],
+        tasks_data=[
+            {'type': 'fill_blank', 'variants': [
+                {"variant_data": {"text": "Формула сульфата меди(II) — ______."}, "correct_answer": {"answer": "CuSO₄"}},
+                {"variant_data": {"text": "KCl называется хлорид ______."}, "correct_answer": {"answer": "калия"}},
+            ]},
+            {'type': 'choice', 'variants': [
+                {"variant_data": {"question_text": "Какая соль является хлоридом?", "options": ["Na₂SO₄", "KCl", "CaCO₃", "Mg(NO₃)₂"]}, "correct_answer": {"answer": 1}},
+            ]},
+        ]
+    )
+
+    # Урок 8 — тест (только задания)
+    create_lesson(track8, 7, "Тест по классам неорганических веществ",
+        is_test=True, xp=80, est_time=20,
+        tasks_data=[
+            {'type': 'classify', 'variants': [
+                {"variant_data": {"item_name": "CaO", "options": ["оксид", "кислота", "основание", "соль"]}, "correct_answer": {"class": "оксид"}},
+                {"variant_data": {"item_name": "HNO₃", "options": ["оксид", "кислота", "основание", "соль"]}, "correct_answer": {"class": "кислота"}},
+            ]},
+            {'type': 'choice', 'variants': [
+                {"variant_data": {"question_text": "Какое вещество является основанием?", "options": ["HCl", "NaOH", "NaCl", "CO₂"]}, "correct_answer": {"answer": 1}},
+            ]},
+            {'type': 'match', 'variants': [
+                {"variant_data": {"left_items": ["CO₂", "NaOH", "NaCl"], "right_items": ["кислотный оксид", "основание", "соль"]}, "correct_answer": {"matches": {"0": 0, "1": 1, "2": 2}}}
+            ]},
+            {'type': 'fill_blank', 'variants': [
+                {"variant_data": {"text": "Na₂SO₄ — это ______ натрия."}, "correct_answer": {"answer": "сульфат"}},
+            ]},
+        ]
+    )
+
+    # Урок 9 (реакции и закон сохранения)
+    create_lesson(track8, 8, "Химические реакции. Закон сохранения массы",
+        theory_blocks=[
+            {"type": "text", "content": "Химическая реакция — превращение одних веществ (реагентов) в другие (продукты). Реакции записываются уравнениями, где отражается закон сохранения массы: число атомов каждого элемента до и после реакции одинаково."},
+            {"type": "image", "src": "assets/images/periodic_table_mini.png", "caption": "Фрагмент таблицы Менделеева"}
+        ],
+        tasks_data=[
+            {'type': 'balance_equation', 'source_type': 'generated', 'generator_id': gen_balance.id, 'scoring_type': 'binary'},
+            {'type': 'true_false', 'variants': [
+                {"variant_data": {"question_text": "При химической реакции масса веществ увеличивается."}, "correct_answer": {"answer": False}},
+            ]},
+        ]
+    )
+
+    # Урок 10 (типы реакций)
+    create_lesson(track8, 9, "Типы химических реакций",
+        theory_blocks=[
+            {"type": "text", "content": "Реакции бывают соединения (A+B→AB), разложения (AB→A+B), замещения (A+BC→AC+B) и обмена (AB+CD→AD+CB)."},
+        ],
+        tasks_data=[
+            {'type': 'classify', 'variants': [
+                {"variant_data": {"item_name": "2H₂ + O₂ → 2H₂O", "options": ["соединение", "разложение", "замещение", "обмен"]}, "correct_answer": {"class": "соединение"}},
+            ]},
+        ]
+    )
+
+    # Урок 11 (растворы, массовая доля)
+    create_lesson(track8, 10, "Растворы. Массовая доля",
+        theory_blocks=[
+            {"type": "text", "content": "Раствор — однородная система, состоящая из растворителя и растворённого вещества. Массовая доля w = m(вещества) / m(раствора). Выражается в процентах."},
+        ],
+        tasks_data=[
+            {'type': 'calculation', 'source_type': 'generated', 'generator_id': gen_calc.id},
+        ]
+    )
+
+    # Тест по реакциям и растворам (12)
+    create_lesson(track8, 11, "Тест по реакциям и растворам",
+        is_test=True, xp=80, est_time=20,
+        tasks_data=[
+            {'type': 'balance_equation', 'source_type': 'generated', 'generator_id': gen_balance.id},
+            {'type': 'calculation', 'source_type': 'generated', 'generator_id': gen_calc.id},
+        ]
+    )
+
+    # ОВР (13)
+    create_lesson(track8, 12, "Окислительно-восстановительные реакции",
+        theory_blocks=[
+            {"type": "text", "content": "ОВР — реакции с изменением степеней окисления. Окислитель принимает электроны, восстановитель отдаёт."},
+        ],
+        tasks_data=[
+            {'type': 'true_false', 'variants': [
+                {"variant_data": {"question_text": "В реакции Zn + 2HCl → ZnCl₂ + H₂ цинк — окислитель."}, "correct_answer": {"answer": False}},
+            ]},
+        ]
+    )
+
+    # Обзор металлов и неметаллов (14)
+    create_lesson(track8, 13, "Основные металлы и неметаллы",
+        theory_blocks=[
+            {"type": "text", "content": "Металлы расположены в левой и нижней части таблицы, неметаллы — в правой верхней. Водород — неметалл."},
+            {"type": "image", "src": "assets/images/crystal_lattice.png", "caption": "Кристаллическая решетка"}
+        ],
+        tasks_data=[
+            {'type': 'classify', 'variants': [
+                {"variant_data": {"item_name": "Cu", "options": ["металл", "неметалл", "амфотерный элемент"]}, "correct_answer": {"class": "металл"}},
+            ]},
+        ]
+    )
+
+    # Итоговый тест 8 класса (15)
+    create_lesson(track8, 14, "Итоговый тест за 8 класс",
+        is_test=True, xp=200, est_time=40,
+        tasks_data=[
+            {'type': 'choice', 'source_type': 'generated', 'generator_id': gen_choice_8.id},
+            {'type': 'balance_equation', 'source_type': 'generated', 'generator_id': gen_balance.id},
+            {'type': 'calculation', 'source_type': 'generated', 'generator_id': gen_calc.id},
+            {'type': 'match', 'variants': [
+                {"variant_data": {"left_items": ["H₂O", "NaCl", "CO₂", "CaO"], "right_items": ["вода", "поваренная соль", "углекислый газ", "негашеная известь"]}, "correct_answer": {"matches": {"0": 0, "1": 1, "2": 2, "3": 3}}}
+            ]},
+        ]
+    )
+
+    # Продолжим с 9 классом (также подробно)
+    # Урок 1 (9 класс) Периодический закон
+    create_lesson(track9, 0, "Периодический закон и таблица Менделеева",
+        theory_blocks=[
+            {"type": "text", "content": "Периодический закон, открытый Д.И. Менделеевым, гласит: свойства химических элементов и их соединений находятся в периодической зависимости от заряда ядра атома. Таблица Менделеева — графическое отображение закона."},
+            {"type": "image", "src": "assets/images/periodic_table_mini.png", "caption": "Периодическая система"}
+        ],
+        tasks_data=[
+            {'type': 'choice', 'source_type': 'generated', 'generator_id': gen_choice_9.id},
+            {'type': 'fill_blank', 'variants': [
+                {"variant_data": {"text": "Элемент с порядковым номером 11 — это ______."}, "correct_answer": {"answer": "натрий"}},
+            ]},
+        ]
+    )
+
+    # Урок 2 (металлы)
+    create_lesson(track9, 1, "Металлы: общая характеристика",
+        theory_blocks=[
+            {"type": "text", "content": "Металлы — элементы, обладающие металлическим блеском, ковкостью, тепло- и электропроводностью. В реакциях они отдают электроны, выступая восстановителями."},
+            {"type": "image", "src": "assets/images/metallic_bond.png", "caption": "Металлическая кристаллическая решетка"}
+        ],
+        tasks_data=[
+            {'type': 'true_false', 'variants': [
+                {"variant_data": {"question_text": "Металлы в реакциях являются окислителями."}, "correct_answer": {"answer": False}},
+            ]},
+            {'type': 'choice', 'variants': [
+                {"variant_data": {"question_text": "Какой из перечисленных металлов самый пластичный?", "options": ["Железо", "Алюминий", "Золото", "Свинец"]}, "correct_answer": {"answer": 2}},
+            ]},
+        ]
+    )
+
+    # Урок 3 (щелочные металлы)
+    create_lesson(track9, 2, "Щелочные металлы",
+        theory_blocks=[
+            {"type": "text", "content": "Щелочные металлы (Li, Na, K, Rb, Cs) — мягкие, очень активные, на воздухе быстро окисляются. Энергично реагируют с водой с выделением водорода."}
+        ],
+        tasks_data=[
+            {'type': 'balance_equation', 'variants': [
+                {"variant_data": {"reactants": ["Na", "H₂O"], "products": ["NaOH", "H₂"]}, "correct_answer": {"coefficients": [2, 2, 2, 1]}},
+            ]},
+        ]
+    )
+
+    # Урок 4 (железо)
+    create_lesson(track9, 3, "Железо и его соединения",
+        theory_blocks=[
+            {"type": "text", "content": "Железо — металл средней активности, притягивается магнитом. Образует два ряда соединений: Fe²⁺ (соли железа(II)) и Fe³⁺ (соли железа(III))."}
+        ],
+        tasks_data=[
+            {'type': 'classify', 'variants': [
+                {"variant_data": {"item_name": "FeCl₃", "options": ["Fe(II)", "Fe(III)", "Fe(VI)", "Fe(0)"]}, "correct_answer": {"class": "Fe(III)"}},
+            ]},
+        ]
+    )
+
+    # Тест по металлам (5)
+    create_lesson(track9, 4, "Тест по металлам",
+        is_test=True, xp=100, est_time=25,
+        tasks_data=[
+            {'type': 'choice', 'source_type': 'generated', 'generator_id': gen_choice_9.id},
+            {'type': 'match', 'variants': [
+                {"variant_data": {"left_items": ["Na", "Fe", "Cu", "Zn"], "right_items": ["щелочной металл", "ферромагнетик", "красный металл", "алюминиевая группа"]}, "correct_answer": {"matches": {"0": 0, "1": 1, "2": 2, "3": 3}}}
+            ]},
+            {'type': 'balance_equation', 'variants': [
+                {"variant_data": {"reactants": ["Fe", "Cl₂"], "products": ["FeCl₃"]}, "correct_answer": {"coefficients": [2, 3, 2]}},
+            ]},
+        ]
+    )
+
+    # Урок 6 (неметаллы общая хар-ка)
+    create_lesson(track9, 5, "Неметаллы: общая характеристика",
+        theory_blocks=[
+            {"type": "text", "content": "Неметаллы — элементы, которые могут принимать электроны, завершая внешний уровень. Они образуют кислотные оксиды, летучие водородные соединения. Типичные неметаллы: O, N, S, Cl, C, P."}
+        ],
+        tasks_data=[
+            {'type': 'choice', 'variants': [
+                {"variant_data": {"question_text": "Какой из элементов образует простое вещество — газ при н.у.?", "options": ["Сера", "Углерод", "Кислород", "Фосфор"]}, "correct_answer": {"answer": 2}},
+            ]},
+        ]
+    )
+
+    # Урок 7 (водород и кислород)
+    create_lesson(track9, 6, "Водород и кислород",
+        theory_blocks=[
+            {"type": "text", "content": "Водород — самый легкий газ, горит, образует взрывчатую смесь с кислородом. Кислород поддерживает горение. Реакция 2H₂ + O₂ → 2H₂O выделяет много энергии."},
+            {"type": "image", "src": "assets/images/gas_collection.png", "caption": "Сбор газов"}
+        ],
+        tasks_data=[
+            {'type': 'balance_equation', 'source_type': 'generated', 'generator_id': gen_balance.id},
+        ]
+    )
+
+    # Урок 8 (галогены)
+    create_lesson(track9, 7, "Галогены",
+        theory_blocks=[
+            {"type": "text", "content": "Галогены (F, Cl, Br, I) — сильные окислители. Фтор — самый активный. Хлор используется для обеззараживания воды, бром — в медицине."}
+        ],
+        tasks_data=[
+            {'type': 'true_false', 'variants': [
+                {"variant_data": {"question_text": "Фтор является сильным восстановителем."}, "correct_answer": {"answer": False}},
+            ]},
+        ]
+    )
+
+    # Урок 9 (скорость реакций)
+    create_lesson(track9, 8, "Скорость химических реакций",
+        theory_blocks=[
+            {"type": "text", "content": "Скорость реакции зависит от природы веществ, концентрации, температуры, катализатора и площади поверхности (для твердых веществ). Повышение температуры на 10°C увеличивает скорость в 2-4 раза (правило Вант-Гоффа)."}
+        ],
+        tasks_data=[
+            {'type': 'calculation', 'variants': [
+                {"variant_data": {"question": "Температурный коэффициент равен 2. На сколько градусов нужно повысить температуру, чтобы скорость увеличилась в 8 раз?"}, "correct_answer": {"value": 30, "tolerance": 0.5}},
+            ]},
+        ]
+    )
+
+    # Урок 10 (равновесие)
+    create_lesson(track9, 9, "Химическое равновесие",
+        theory_blocks=[
+            {"type": "text", "content": "Химическое равновесие — состояние, когда скорости прямой и обратной реакций равны. Принцип Ле-Шателье: если на систему оказать воздействие, равновесие смещается в сторону, ослабляющую это воздействие."},
+            {"type": "image", "src": "assets/images/equilibrium_graph.png", "caption": "График установления равновесия"}
+        ],
+        tasks_data=[
+            {'type': 'choice', 'variants': [
+                {"variant_data": {"question_text": "Куда сместится равновесие N₂ + 3H₂ ⇌ 2NH₃ + Q при повышении давления?", "options": ["Вправо", "Влево", "Не изменится"]}, "correct_answer": {"answer": 0}},
+            ]},
+        ]
+    )
+
+    # Тест по неметаллам и кинетике (11)
+    create_lesson(track9, 10, "Тест по неметаллам и кинетике",
+        is_test=True, xp=100, est_time=25,
+        tasks_data=[
+            {'type': 'balance_equation', 'source_type': 'generated', 'generator_id': gen_balance.id},
+            {'type': 'choice', 'source_type': 'generated', 'generator_id': gen_choice_9.id},
+            {'type': 'match', 'variants': [
+                {"variant_data": {"left_items": ["Cl₂", "H₂", "N₂", "O₂"], "right_items": ["желто-зеленый газ", "бесцветный горючий газ", "инертный газ", "поддерживает горение"]}, "correct_answer": {"matches": {"0": 0, "1": 1, "2": 2, "3": 3}}}
+            ]},
+        ]
+    )
+
+    # Урок 12 (электролитическая диссоциация)
+    create_lesson(track9, 11, "Электролитическая диссоциация",
+        theory_blocks=[
+            {"type": "text", "content": "Электролиты — вещества, растворы или расплавы которых проводят электрический ток. При растворении в воде ионные соединения и многие кислоты распадаются на ионы."},
+            {"type": "image", "src": "assets/images/electrolysis.png", "caption": "Схема электролиза"}
+        ],
+        tasks_data=[
+            {'type': 'fill_blank', 'variants': [
+                {"variant_data": {"text": "HCl → H+ + ______."}, "correct_answer": {"answer": "Cl-"}},
+            ]},
+        ]
+    )
+
+    # Урок 13 (ионные реакции)
+    create_lesson(track9, 12, "Реакции ионного обмена",
+        theory_blocks=[
+            {"type": "text", "content": "Реакции ионного обмена идут до конца, если образуется осадок, газ или малодиссоциирующее вещество (вода). Например, AgNO₃ + NaCl → AgCl↓ + NaNO₃."}
+        ],
+        tasks_data=[
+            {'type': 'balance_equation', 'variants': [
+                {"variant_data": {"reactants": ["AgNO₃", "NaCl"], "products": ["AgCl", "NaNO₃"]}, "correct_answer": {"coefficients": [1, 1, 1, 1]}},
+            ]},
+        ]
+    )
+
+    # Урок 14 (введение в органику)
+    create_lesson(track9, 13, "Введение в органическую химию",
+        theory_blocks=[
+            {"type": "text", "content": "Органическая химия изучает соединения углерода (кроме оксидов, карбидов, угольной кислоты и ее солей). Основные классы: алканы, алкены, спирты, карбоновые кислоты."},
+            {"type": "image", "src": "assets/images/organic_molecule.png", "caption": "Модель метана CH₄"}
+        ],
+        tasks_data=[
+            {'type': 'choice', 'variants': [
+                {"variant_data": {"question_text": "Какая формула соответствует метану?", "options": ["CH₄", "C₂H₆", "C₃H₈", "C₄H₁₀"]}, "correct_answer": {"answer": 0}},
+            ]},
+        ]
+    )
+
+    # Итоговый тест 9 класса
+    create_lesson(track9, 14, "Итоговый тест за 9 класс",
+        is_test=True, xp=200, est_time=40,
+        tasks_data=[
+            {'type': 'choice', 'source_type': 'generated', 'generator_id': gen_choice_9.id},
+            {'type': 'balance_equation', 'source_type': 'generated', 'generator_id': gen_balance.id},
+            {'type': 'calculation', 'source_type': 'generated', 'generator_id': gen_calc.id},
+            {'type': 'match', 'variants': [
+                {"variant_data": {"left_items": ["Fe", "Cl₂", "NaOH", "H₂SO₄"], "right_items": ["металл", "неметалл", "щелочь", "кислота"]}, "correct_answer": {"matches": {"0": 0, "1": 1, "2": 2, "3": 3}}}
+            ]},
+            {'type': 'classify', 'variants': [
+                {"variant_data": {"item_name": "CaCO₃", "options": ["оксид", "кислота", "основание", "соль"]}, "correct_answer": {"class": "соль"}},
+            ]},
+        ]
+    )
+
+    seed_shop_data(db)
+    seed_achievements(db)
+
+    print("Реальный контент успешно добавлен.")
 
 if __name__ == "__main__":
     seed_data()
+```
+
+gui/widgets/molecule_widget.py ```
+from PyQt6.QtWidgets import QGraphicsView, QGraphicsScene, QGraphicsEllipseItem, QGraphicsLineItem
+from PyQt6.QtCore import Qt, QPointF, QPropertyAnimation, QEasingCurve, pyqtProperty
+from PyQt6.QtGui import QPen, QBrush, QColor, QRadialGradient
+import math
+
+class AtomItem(QGraphicsEllipseItem):
+    def __init__(self, element, x, y, radius=20):
+        super().__init__(-radius, -radius, 2*radius, 2*radius)
+        self.element = element
+        self.setPos(x, y)
+        self.setBrush(self._color_for_element(element))
+        self.setPen(QPen(Qt.GlobalColor.black, 2))
+        self.setAcceptHoverEvents(True)
+
+    def _color_for_element(self, el):
+        colors = {
+            'H': QColor(255,255,255),
+            'O': QColor(255,0,0),
+            'C': QColor(50,50,50),
+            'N': QColor(0,0,255),
+            'Na': QColor(171,92,219),
+            'Cl': QColor(0,255,0),
+        }
+        return QBrush(colors.get(el, QColor(200,200,200)))
+
+class BondItem(QGraphicsLineItem):
+    def __init__(self, atom1, atom2, bond_order=1):
+        super().__init__()
+        self.atom1 = atom1
+        self.atom2 = atom2
+        self.bond_order = bond_order
+        self.update_position()
+        pen = QPen(Qt.GlobalColor.darkGray, 3)
+        self.setPen(pen)
+
+    def update_position(self):
+        p1 = self.atom1.pos()
+        p2 = self.atom2.pos()
+        self.setLine(p1.x(), p1.y(), p2.x(), p2.y())
+
+class MoleculeWidget(QGraphicsView):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.scene = QGraphicsScene()
+        self.setScene(self.scene)
+        self.setRenderHint(self.renderHints())
+        self.setDragMode(QGraphicsView.DragMode.ScrollHandDrag)
+        self.atoms = []
+        self.bonds = []
+
+    def load_from_data(self, data: dict):
+        """data содержит списки atoms и bonds.
+        atoms: [{'element': 'H', 'x': 0, 'y': 0}, ...]
+        bonds: [{'from': 0, 'to': 1, 'order': 1}, ...]
+        """
+        self.scene.clear()
+        self.atoms = []
+        self.bonds = []
+        for a in data['atoms']:
+            atom = AtomItem(a['element'], a['x'], a['y'])
+            self.scene.addItem(atom)
+            self.atoms.append(atom)
+        for b in data['bonds']:
+            bond = BondItem(self.atoms[b['from']], self.atoms[b['to']], b.get('order', 1))
+            self.scene.addItem(bond)
+            self.bonds.append(bond)
+
+    def animate_reaction(self, products_data, old_bond_indices_to_break, new_bonds_to_form):
+        """Пример анимации разрыва и образования связей."""
+        # Упрощённо: скрываем старые связи, меняем позиции атомов, показываем новые связи.
+        # Для реальной анимации можно использовать QPropertyAnimation на позиции атомов.
+        pass
 ```
 
 gui/widgets/task_widgets.py ```
@@ -1110,18 +1624,33 @@ class MatchTaskWidget(BaseTaskWidget):
         layout.addWidget(QLabel("Сопоставьте элементы из левой колонки с правой:"))
 
         grid = QGridLayout()
-        self.left_items = self.variant_data.get('left_items', [])
-        random.shuffle(self.left_items)
-        self.right_items = self.variant_data.get('right_items', [])
-        random.shuffle(self.right_items)
+        
+        # Сохраняем исходное соответствие индексов перед перемешиванием
+        left_items = self.variant_data.get('left_items', [])
+        right_items = self.variant_data.get('right_items', [])
+        
+        # Формируем пары (исходный_индекс, значение) и перемешиваем
+        left_pairs = list(enumerate(left_items))
+        right_pairs = list(enumerate(right_items))
+        random.shuffle(left_pairs)
+        random.shuffle(right_pairs)
+        
+        # Извлекаем тексты и исходные индексы
+        self.left_original_indices = [orig for orig, _ in left_pairs]
+        self.left_texts = [text for _, text in left_pairs]
+        
+        self.right_original_indices = [orig for orig, _ in right_pairs]
+        self.right_texts = [text for _, text in right_pairs]
+        
         self.combos = []
 
-        for i, left in enumerate(self.left_items):
-            label = QLabel(left)
+        for i, left_text in enumerate(self.left_texts):
+            label = QLabel(left_text)
             combo = QComboBox()
             combo.addItem("Выберите...", None)
-            for j, right in enumerate(self.right_items):
-                combo.addItem(right, j)
+            for j, right_text in enumerate(self.right_texts):
+                # В userData храним исходный индекс правого элемента
+                combo.addItem(right_text, self.right_original_indices[j])
             grid.addWidget(label, i, 0)
             grid.addWidget(combo, i, 1)
             self.combos.append(combo)
@@ -1136,9 +1665,10 @@ class MatchTaskWidget(BaseTaskWidget):
     def get_answer(self):
         matches = {}
         for i, combo in enumerate(self.combos):
-            idx = combo.currentData()
-            if idx is not None:
-                matches[str(i)] = idx
+            orig_left_idx = self.left_original_indices[i]
+            orig_right_idx = combo.currentData()  # исходный индекс правого элемента
+            if orig_right_idx is not None:
+                matches[str(orig_left_idx)] = orig_right_idx
         return {'matches': matches}
 
 
@@ -1664,7 +2194,7 @@ class LessonListWindow(QWidget):
         self.progress_service = ProgressService(self.db)
 
         self.setWindowTitle(f"Уроки: {track.name}")
-        self.setFixedSize(500, 500)
+        self.setFixedSize(800, 500)
         self.init_ui()
 
     def init_ui(self):
@@ -1807,13 +2337,21 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QPixmap
 from sqlalchemy import func
+
+from basedir import resource_path
 from database.db import SessionLocal
 from services.lesson_service import LessonService
 from services.task_service import TaskService
 from services.progress_service import ProgressService
 from gui.widgets.task_widgets import create_task_widget
+from gui.widgets.molecule_widget import MoleculeWidget
 from database.models.content import LessonVersion
 from database.models.progress import TaskAttempt, UserLessonProgress
+from services.currency_service import CurrencyService
+from services.achievement_service import AchievementService
+from services.challenge_service import ChallengeService
+from services.leaderboard_service import LeaderboardService
+from services.statistics_service import StatisticsService
 
 
 class LessonWindow(QWidget):
@@ -1900,7 +2438,7 @@ class LessonWindow(QWidget):
                     content_layout.addWidget(label)
                 elif block['type'] == 'image':
                     # Изображение (путь к файлу)
-                    pixmap = QPixmap(block['src'])
+                    pixmap = QPixmap(resource_path(block['src']))
                     if not pixmap.isNull():
                         img_label = QLabel()
                         img_label.setPixmap(pixmap.scaledToWidth(600, Qt.TransformationMode.SmoothTransformation))
@@ -1915,7 +2453,11 @@ class LessonWindow(QWidget):
                         error_label = QLabel(f"Изображение не найдено: {block['src']}")
                         error_label.setStyleSheet("color: red;")
                         content_layout.addWidget(error_label)
-                # Здесь можно добавить другие типы блоков (анимации и т.д.)
+                elif block['type'] == 'molecule':
+                    molecule_view = MoleculeWidget()
+                    molecule_view.load_from_data(block['data'])
+                    molecule_view.setFixedSize(300, 200)
+                    content_layout.addWidget(molecule_view)
 
         content_layout.addStretch()
         content_widget.setLayout(content_layout)
@@ -2031,10 +2573,11 @@ class LessonWindow(QWidget):
         else:
             QMessageBox.warning(self, "Результат", "Неправильно!")
 
-        # Разрешаем переход к следующему
-        self.next_btn.setEnabled(True)
-        # Если это было последнее задание, возможно сразу завершить
-        if idx == len(self.lesson_tasks) - 1:
+        # Разрешаем переход к следующему только если это не последнее задание
+        if idx < len(self.lesson_tasks) - 1:
+            self.next_btn.setEnabled(True)
+        else:
+            self.next_btn.setEnabled(False)  # на всякий случай деактивируем
             self.finish_btn.setEnabled(True)
 
     def next_task(self):
@@ -2055,7 +2598,7 @@ class LessonWindow(QWidget):
         lesson_progress = self.progress_service.get_or_create_lesson_progress(
             track_progress.id, self.lesson.id
         )
-        if not lesson_progress.theory_viewed:
+        if len(self.content['theory']) > 0 and not lesson_progress.theory_viewed:
             QMessageBox.warning(self, "Ошибка", "Сначала изучите теорию!")
             return
 
@@ -2075,14 +2618,65 @@ class LessonWindow(QWidget):
             TaskAttempt.lesson_progress_id == lesson_progress.id,
             TaskAttempt.is_correct == True
         ).count()
+        # Статистика по темам
+        stats_svc = StatisticsService(self.db)
+        for lesson_task, task in self.lesson_tasks:
+            # ищем последнюю попытку этого задания в рамках урока
+            last_attempt = self.db.query(TaskAttempt).filter(
+                TaskAttempt.user_id == self.user.id,
+                TaskAttempt.task_id == task.id,
+                TaskAttempt.lesson_progress_id == lesson_progress.id
+            ).order_by(TaskAttempt.created_at.desc()).first()
+            if last_attempt:
+                stats_svc.update_topic_stats(
+                    self.user.id,
+                    task.topic_tags,
+                    is_correct=last_attempt.is_correct,
+                    task_type=task.type
+                )
 
         percent = (completed_tasks / total_tasks) * 100
-        if percent >= 50:  # Условие >50%
+        if percent >= 50:
             lesson_progress.status = 'completed'
             lesson_progress.completed_at = func.now()
-            # Обновляем XP в треке
             track_progress.total_xp += self.active_version.xp_reward
             self.db.commit()
+
+            # ---------- Геймификация ----------
+            currency_svc = CurrencyService(self.db)
+            # Награда за урок: монеты = XP/2, кристаллы = XP/10
+            coins_earned = self.active_version.xp_reward // 2
+            crystals_earned = max(1, self.active_version.xp_reward // 10)
+            currency_svc.add_coins(self.user.id, coins_earned)
+            currency_svc.add_crystals(self.user.id, crystals_earned)
+
+            # Достижения
+            achievement_svc = AchievementService(self.db)
+            achievement_svc.check_and_award(self.user.id, 'complete_lesson', {
+                'track_id': self.track.id,
+                'lesson_id': self.lesson.id,
+                'score_percent': percent
+            })
+            achievement_svc.check_and_award(self.user.id, 'count_tasks', {
+                'count': completed_tasks
+            })
+
+            # Челленджи
+            challenge_svc = ChallengeService(self.db)
+            challenge_svc.update_progress(self.user.id, 'complete_lesson', 1)
+
+            # Лидерборды
+            lb_svc = LeaderboardService(self.db)
+            lb_svc.update_entry(self.user.id, 'xp_total', self.active_version.xp_reward)
+            lb_svc.update_entry(self.user.id, 'xp_weekly', self.active_version.xp_reward)
+            lb_svc.update_entry(self.user.id, 'tasks_completed', completed_tasks)
+
+
+            # Статистика тем (из тегов заданий)
+            stats_svc = StatisticsService(self.db)
+            for lesson_task, task in self.lesson_tasks:
+                stats_svc.update_topic_stats(self.user.id, task.topic_tags, is_correct=...)
+            
             QMessageBox.information(self, "Урок завершён", f"Урок пройден! Получено {self.active_version.xp_reward} XP.")
             self.back_to_lessons()
         else:
@@ -2224,20 +2818,19 @@ class MainMenuWindow(QWidget):
         learn_button = QPushButton("Учиться")
         learn_button.clicked.connect(self.open_learning)
 
-        reference_button = QPushButton("Справочник")
-        reference_button.clicked.connect(self.open_reference)
 
-        reference_button = QPushButton("Доска почёта")
-        reference_button.clicked.connect(self.open_leaderboard)
+        leaderboard_button = QPushButton("Доска почёта")
+        leaderboard_button.clicked.connect(self.open_leaderboard)
 
-        reference_button = QPushButton("Настройки")
-        reference_button.clicked.connect(self.open_settings)
+        settings_button = QPushButton("Настройки")
+        settings_button.clicked.connect(self.open_settings)
 
         exit_button = QPushButton("Выход")
         exit_button.clicked.connect(self.logout)
 
         menu_layout.addWidget(learn_button)
-        menu_layout.addWidget(reference_button)
+        menu_layout.addWidget(leaderboard_button)
+        menu_layout.addWidget(settings_button)
         menu_layout.addWidget(exit_button)
 
         main_layout.addLayout(top_layout)
@@ -2264,9 +2857,6 @@ class MainMenuWindow(QWidget):
         self.learning_window.show()
         self.close()
 
-    def open_reference(self):
-        print("Открыть справочник")
-
     def open_leaderboard(self):
         print("Открыть доску почёта")
 
@@ -2280,175 +2870,380 @@ class MainMenuWindow(QWidget):
         self.close()
 ```
 
-gui/windows/profile_window.py ```
+gui/windows/profile_settings_window.py ```
 from PyQt6.QtWidgets import (
-    QWidget,
-    QLabel,
-    QPushButton,
-    QVBoxLayout,
-    QHBoxLayout,
-    QScrollArea,
-    QFrame,
-    QMessageBox
+    QWidget, QVBoxLayout, QTabWidget, QLabel, QListWidget, QListWidgetItem,
+    QPushButton, QHBoxLayout, QComboBox, QMessageBox
 )
-
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QPixmap
+from services.shop_service import ShopService
+from services.achievement_service import AchievementService
 
-
-class ProfileWindow(QWidget):
-
+class ProfileSettingsWindow(QWidget):
     def __init__(self, user, db_session):
         super().__init__()
-
         self.user = user
-        self.session = db_session
-
-        self.setWindowTitle("Интерактивная химия | Профиль")
+        self.db = db_session
+        self.shop_svc = ShopService(self.db)
+        self.ach_svc = AchievementService(self.db)
+        self.setWindowTitle("Настройки профиля")
         self.setFixedSize(600, 500)
-
         self.init_ui()
 
     def init_ui(self):
+        layout = QVBoxLayout()
+        tabs = QTabWidget()
 
-        main_layout = QVBoxLayout()
+        # Вкладка Аватар
+        avatar_widget = self.create_avatar_tab()
+        tabs.addTab(avatar_widget, "Аватар")
 
-        # ---- верхняя панель ----
+        # Вкладка Тема
+        theme_widget = self.create_theme_tab()
+        tabs.addTab(theme_widget, "Тема")
 
-        top_layout = QHBoxLayout()
+        # Вкладка Витрина
+        showcase_widget = self.create_showcase_tab()
+        tabs.addTab(showcase_widget, "Витрина")
 
-        settings_button = QPushButton("Настройки")
-        settings_button.clicked.connect(self.open_settings)
+        # Вкладка Достижения
+        achievements_widget = self.create_achievements_tab()
+        tabs.addTab(achievements_widget, "Достижения")
 
-        friends_button = QPushButton("Друзья")
-        friends_button.clicked.connect(self.open_friends)
+        layout.addWidget(tabs)
 
-        menu_button = QPushButton("Меню")
-        menu_button.clicked.connect(self.back_to_menu)
+        back_btn = QPushButton("Назад в профиль")
+        back_btn.clicked.connect(self.back_to_profile)
+        layout.addWidget(back_btn)
+        self.setLayout(layout)
 
-        top_layout.addWidget(settings_button)
-        top_layout.addStretch()
-        top_layout.addWidget(friends_button)
-        top_layout.addStretch()
-        top_layout.addWidget(menu_button)
+    def create_avatar_tab(self):
+        widget = QWidget()
+        layout = QVBoxLayout()
+        layout.addWidget(QLabel("Выберите аватар из вашего инвентаря:"))
+        list_widget = QListWidget()
+        # Получаем все аватары в инвентаре
+        inventory = self.shop_svc.get_inventory(self.user.id)
+        equipped_avatar = self.shop_svc.get_equipped_avatar(self.user.id)
+        for inv in inventory:
+            if inv.item_type.category != 'avatar':
+                continue
+            item = QListWidgetItem(inv.item_type.name)
+            item.setData(1, inv.id)
+            if equipped_avatar and inv.id == equipped_avatar.id:
+                item.setSelected(True)
+            list_widget.addItem(item)
+        list_widget.itemClicked.connect(self.equip_avatar)
+        layout.addWidget(list_widget)
+        widget.setLayout(layout)
+        return widget
 
-        # ---- аватар ----
+    def equip_avatar(self, item):
+        inv_id = item.data(1)
+        self.shop_svc.equip_item(self.user.id, inv_id)
+        QMessageBox.information(self, "Аватар", "Аватар обновлён!")
 
-        avatar = QLabel()
-        pixmap = QPixmap("C:\\0.0.Diploma2\\profile.png")
+    def create_theme_tab(self):
+        widget = QWidget()
+        layout = QVBoxLayout()
+        layout.addWidget(QLabel("Выберите тему профиля:"))
+        list_widget = QListWidget()
+        inventory = self.shop_svc.get_inventory(self.user.id)
+        equipped_theme = self.shop_svc.get_equipped_theme(self.user.id)
+        for inv in inventory:
+            if inv.item_type.category != 'profile_theme':
+                continue
+            item = QListWidgetItem(inv.item_type.name)
+            item.setData(1, inv.id)
+            if equipped_theme and inv.id == equipped_theme.id:
+                item.setSelected(True)
+            list_widget.addItem(item)
+        list_widget.itemClicked.connect(self.equip_theme)
+        layout.addWidget(list_widget)
+        widget.setLayout(layout)
+        return widget
 
-        avatar.setPixmap(pixmap.scaled(
-            100,
-            100,
-            Qt.AspectRatioMode.KeepAspectRatio,
-            Qt.TransformationMode.SmoothTransformation
-        ))
+    def equip_theme(self, item):
+        inv_id = item.data(1)
+        self.shop_svc.equip_item(self.user.id, inv_id)
+        QMessageBox.information(self, "Тема", "Тема обновлена!")
 
-        avatar.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    def create_showcase_tab(self):
+        widget = QWidget()
+        layout = QVBoxLayout()
+        layout.addWidget(QLabel("Управление витриной"))
 
-        # ---- имя пользователя ----
+        # Выбор активной витрины
+        layout.addWidget(QLabel("Активная витрина:"))
+        self.showcase_combo = QComboBox()
+        inventory = self.shop_svc.get_inventory(self.user.id)
+        self.showcase_ids = []
+        for inv in inventory:
+            if inv.item_type.category == 'showcase':
+                self.showcase_combo.addItem(f"{inv.item_type.name} (вместимость {inv.item_type.capacity})", inv.id)
+                self.showcase_ids.append(inv.id)
+        active = self.shop_svc.get_active_showcase(self.user.id)
+        if active:
+            idx = self.showcase_ids.index(active.id) if active.id in self.showcase_ids else 0
+            self.showcase_combo.setCurrentIndex(idx)
+        self.showcase_combo.currentIndexChanged.connect(self.on_showcase_changed)
+        layout.addWidget(self.showcase_combo)
 
-        username_label = QLabel(self.user.username)
-        username_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        username_label.setStyleSheet("font-size: 18px; font-weight: bold;")
+        # Слоты витрины
+        layout.addWidget(QLabel("Заполнение слотов:"))
+        self.slots_layout = QVBoxLayout()  # будет перестраиваться
+        layout.addLayout(self.slots_layout)
+        self.refresh_slots()
 
-        # ---- витрина ----
+        widget.setLayout(layout)
+        return widget
 
-        showcase_title = QLabel("Витрина")
-        showcase_title.setStyleSheet("font-size: 16px;")
+    def on_showcase_changed(self):
+        # Сделать выбранную витрину активной
+        if self.showcase_combo.currentIndex() >= 0:
+            inv_id = self.showcase_combo.currentData()
+            self.shop_svc.equip_item(self.user.id, inv_id)
+            self.refresh_slots()
 
-        showcase_scroll = self.create_scroll_section("здесь будет\nвитрина")
+    def refresh_slots(self):
+        # Очищаем и перестраиваем слоты
+        while self.slots_layout.count():
+            child = self.slots_layout.takeAt(0)
+            if child.widget():
+                child.widget().deleteLater()
+        active = self.shop_svc.get_active_showcase(self.user.id)
+        if not active:
+            self.slots_layout.addWidget(QLabel("Нет активной витрины"))
+            return
+        capacity = active.item_type.capacity
+        slots = self.shop_svc.get_showcase_slots(self.user.id)
+        # Получаем список доступных артефактов (не экипированных)
+        inventory = self.shop_svc.get_inventory(self.user.id)
+        available_artifacts = [inv for inv in inventory if inv.item_type.category == 'artifact' and not inv.is_equipped]
+        for slot_num in range(1, capacity+1):
+            slot_widget = QWidget()
+            slot_layout = QHBoxLayout()
+            slot_layout.addWidget(QLabel(f"Слот {slot_num}:"))
+            combo = QComboBox()
+            combo.addItem("Пусто", None)
+            current_artifact = slots.get(slot_num)
+            selected_idx = 0
+            for i, art in enumerate(available_artifacts):
+                combo.addItem(art.item_type.name, art.id)
+                if current_artifact and art.id == current_artifact.id:
+                    selected_idx = i+1
+            combo.setCurrentIndex(selected_idx)
+            combo.currentIndexChanged.connect(lambda idx, s=slot_num, c=combo: self.place_artifact(s, c))
+            slot_layout.addWidget(combo)
+            slot_widget.setLayout(slot_layout)
+            self.slots_layout.addWidget(slot_widget)
 
-        # ---- достижения ----
+    def place_artifact(self, slot, combo):
+        inv_id = combo.currentData()
+        if inv_id is not None:
+            success, msg = self.shop_svc.place_artifact_in_slot(self.user.id, inv_id, slot)
+            if not success:
+                QMessageBox.warning(self, "Ошибка", msg)
+            else:
+                QMessageBox.information(self, "Витрина", "Артефакт размещён")
+                self.refresh_slots()
+        else:
+            # Пока просто обновим отображение
+            self.refresh_slots()
 
-        achievements_title = QLabel("Достижения")
-        achievements_title.setStyleSheet("font-size: 16px;")
+    def create_achievements_tab(self):
+        widget = QWidget()
+        layout = QVBoxLayout()
+        layout.addWidget(QLabel("Отметьте достижения, которые будут видны в профиле:"))
+        user_achievements = self.ach_svc.get_user_achievements(self.user.id)
+        if not user_achievements:
+            layout.addWidget(QLabel("У вас пока нет достижений."))
+        for ua in user_achievements:
+            cb = QPushButton(f"{ua.achievement.name} {'✅' if ua.is_displayed else '❌'}")
+            cb.setCheckable(True)
+            cb.setChecked(ua.is_displayed)
+            cb.clicked.connect(lambda checked, ua=ua: self.toggle_achievement_display(ua.id, checked))
+            layout.addWidget(cb)
+        widget.setLayout(layout)
+        return widget
 
-        achievements_scroll = self.create_scroll_section("здесь будет\nдостижение")
+    def toggle_achievement_display(self, ua_id, show):
+        self.ach_svc.toggle_display(self.user.id, ua_id, show)
 
-        # ---- сборка ----
+    def back_to_profile(self):
+        from gui.windows.profile_window import ProfileWindow
+        self.profile = ProfileWindow(self.user, self.db)
+        self.profile.show()
+        self.close()
+```
 
-        main_layout.addLayout(top_layout)
+gui/windows/profile_window.py ```
+from PyQt6.QtWidgets import (
+    QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout, QScrollArea, QFrame, QMessageBox
+)
+from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QPixmap
+import os
+from services.currency_service import CurrencyService
+from services.shop_service import ShopService
+from services.achievement_service import AchievementService  # нужно добавить метод get_user_achievements
 
-        main_layout.addSpacing(10)
+class ProfileWindow(QWidget):
+    def __init__(self, user, db_session):
+        super().__init__()
+        self.user = user
+        self.db = db_session
+        self.shop_svc = ShopService(self.db)
+        self.ach_svc = AchievementService(self.db)
+        self.setWindowTitle("Профиль")
+        self.setFixedSize(700, 700)
+        self.init_ui()
 
-        main_layout.addWidget(avatar)
-        main_layout.addWidget(username_label)
+    def init_ui(self):
+        layout = QVBoxLayout()
+        # Верхняя панель
+        top = QHBoxLayout()
+        back_btn = QPushButton("Меню")
+        back_btn.clicked.connect(self.back_to_menu)
+        friends_btn = QPushButton("Друзья")
+        friends_btn.clicked.connect(self.open_friends)
+        store_btn = QPushButton("Магазин")
+        store_btn.clicked.connect(self.open_store)
+        settings_btn = QPushButton("Настроить профиль")
+        settings_btn.clicked.connect(self.open_settings)
+        top.addWidget(back_btn)
+        top.addStretch()
+        top.addWidget(friends_btn)
+        top.addWidget(store_btn)
+        top.addWidget(settings_btn)
+        layout.addLayout(top)
 
-        main_layout.addSpacing(20)
+        # Аватар
+        avatar_label = QLabel()
+        avatar_inv = self.shop_svc.get_equipped_avatar(self.user.id)
+        if avatar_inv and avatar_inv.item_type.icon_url:
+            pix = QPixmap(avatar_inv.item_type.icon_url)
+        else:
+            pix = QPixmap("C:\\0.0.Diploma2\\profile.png")
+        avatar_label.setPixmap(pix.scaled(80, 80, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
+        avatar_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(avatar_label)
 
-        main_layout.addWidget(showcase_title)
-        main_layout.addWidget(showcase_scroll)
+        username = QLabel(self.user.username)
+        username.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        username.setStyleSheet("font-size: 18px; font-weight: bold;")
+        layout.addWidget(username)
 
-        main_layout.addSpacing(10)
+        # Валюта
+        curr_svc = CurrencyService(self.db)
+        wallet = curr_svc.get_or_create_wallet(self.user.id)
+        currency_label = QLabel(f"Монеты: {wallet.coins}  Кристаллы: {wallet.crystals}")
+        currency_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(currency_label)
 
-        main_layout.addWidget(achievements_title)
-        main_layout.addWidget(achievements_scroll)
+        # Витрина (горизонтальный скролл)
+        layout.addWidget(QLabel("Моя витрина"))
+        showcase_container = self.create_showcase_display()
+        layout.addWidget(showcase_container)
 
-        self.setLayout(main_layout)
+        # Достижения
+        layout.addWidget(QLabel("Достижения"))
+        ach_scroll = self.create_achievements_display()
+        layout.addWidget(ach_scroll)
 
-    # ---- создание горизонтального скролла ----
+        self.setLayout(layout)
 
-    def create_scroll_section(self, filler):
+    def create_showcase_display(self):
+        """Отображает активную витрину с размещёнными артефактами."""
+        widget = QWidget()
+        layout = QHBoxLayout()
+        active = self.shop_svc.get_active_showcase(self.user.id)
+        if not active:
+            layout.addWidget(QLabel("Нет активной витрины. Купите и выберите в настройках."))
+            widget.setLayout(layout)
+            return widget
 
+        capacity = active.item_type.capacity
+        slots = self.shop_svc.get_showcase_slots(self.user.id)
+        # Рисуем витрину как рамку с иконками артефактов в слотах
+        # Для простоты используем горизонтальный ряд квадратов
+        for slot_num in range(1, capacity+1):
+            slot_widget = QWidget()
+            slot_layout = QVBoxLayout()
+            slot_widget.setFixedSize(80, 80)
+            slot_widget.setStyleSheet("background-color: #202020; border: 1px solid gray;")
+            if slot_num in slots:
+                art_inv = slots[slot_num]
+                icon_label = QLabel()
+                pix = QPixmap(art_inv.item_type.icon_url) if os.path.exists(art_inv.item_type.icon_url) else QPixmap()
+                if pix.isNull():
+                    # Заглушка: цветной круг с буквой
+                    icon_label.setText(art_inv.item_type.name[0])
+                    icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                    icon_label.setStyleSheet("font-size: 20px; color: white;")
+                else:
+                    icon_label.setPixmap(pix.scaled(70, 70, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
+                slot_layout.addWidget(icon_label)
+            else:
+                slot_layout.addWidget(QLabel("Пусто"), alignment=Qt.AlignmentFlag.AlignCenter)
+            slot_widget.setLayout(slot_layout)
+            layout.addWidget(slot_widget)
+        widget.setLayout(layout)
         scroll = QScrollArea()
+        scroll.setWidget(widget)
         scroll.setWidgetResizable(True)
         scroll.setFixedHeight(120)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
-        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-
-        container = QWidget()
-        layout = QHBoxLayout()
-
-        # временные элементы витрины
-        for _ in range(10):
-
-            cell = QFrame()
-            cell.setFixedSize(100, 100)
-            cell.setStyleSheet("""
-                background-color: #303030;
-                border: 1px solid #999;
-            """)
-
-            label = QLabel(filler)
-            label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-
-            cell_layout = QVBoxLayout()
-            cell_layout.addWidget(label)
-
-            cell.setLayout(cell_layout)
-
-            layout.addWidget(cell)
-
-        layout.addStretch()
-
-        container.setLayout(layout)
-
-        scroll.setWidget(container)
-
         return scroll
 
-    # ---- кнопки ----
+    def create_achievements_display(self):
+        """Отображает достижения, отмеченные для показа в профиле."""
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFixedHeight(100)
+        container = QWidget()
+        h_layout = QHBoxLayout()
+        user_achievements = self.ach_svc.get_user_achievements(self.user.id)
+        displayed = [ua for ua in user_achievements if ua.is_displayed]
+        if not displayed:
+            h_layout.addWidget(QLabel("Нет достижений для отображения."))
+        else:
+            for ua in displayed:
+                frame = QFrame()
+                frame.setFixedSize(70, 70)
+                frame.setStyleSheet("background-color: #202020; border: 1px solid gold;")
+                lbl = QLabel(ua.achievement.name)
+                lbl.setWordWrap(True)
+                lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                f_layout = QVBoxLayout(frame)
+                f_layout.addWidget(lbl)
+                h_layout.addWidget(frame)
+        container.setLayout(h_layout)
+        scroll.setWidget(container)
+        return scroll
+    
+    def open_settings(self):
+        from gui.windows.profile_settings_window import ProfileSettingsWindow
+        self.settings_win = ProfileSettingsWindow(self.user, self.db)
+        self.settings_win.show()
+        self.close()
+    
+    def open_store(self):
+        from gui.windows.store_window import StoreWindow
+        self.store = StoreWindow(self.user, self.db)
+        self.store.show()
+        self.close()
 
     def back_to_menu(self):
         from gui.windows.main_window import MainMenuWindow
-
-        self.menu = MainMenuWindow(self.user, self.session)
+        self.menu = MainMenuWindow(self.user, self.db)
         self.menu.show()
-
         self.close()
 
     def open_friends(self):
         from gui.windows.friends_window import FriendsWindow
-
-        self.friends = FriendsWindow(self.user, self.session)
-        self.friends.show()
-
+        self.friends_win = FriendsWindow(self.user, self.db)
+        self.friends_win.show()
         self.close()
-
-    def open_settings(self):
-        QMessageBox.information(self, None, "Открыть настройки")
-
 ```
 
 gui/windows/register_window.py ```
@@ -2561,6 +3356,82 @@ class RegisterWindow(QWidget):
         from gui.windows.login_window import LoginWindow
         self.login_window = LoginWindow(db_session=self.db_session)
         self.login_window.show()
+        self.close()
+```
+
+gui/windows/store_window.py ```
+from PyQt6.QtWidgets import QWidget, QVBoxLayout, QLabel, QPushButton, QScrollArea, QGridLayout, QMessageBox, QTabWidget, QListWidget, QListWidgetItem, QHBoxLayout
+from PyQt6.QtGui import QPixmap, QIcon
+from PyQt6.QtCore import QSize
+from services.shop_service import ShopService
+import os
+
+class StoreWindow(QWidget):
+    def __init__(self, user, db_session):
+        super().__init__()
+        self.user = user
+        self.db = db_session
+        self.shop_svc = ShopService(self.db)
+        self.setWindowTitle("Магазин")
+        self.setFixedSize(700, 550)
+        self.init_ui()
+
+    def init_ui(self):
+        layout = QVBoxLayout()
+        title = QLabel("Магазин предметов")
+        title.setStyleSheet("font-size: 18px; font-weight: bold;")
+        layout.addWidget(title)
+
+        # Вкладки по категориям
+        tabs = QTabWidget()
+        categories = [("Все", None), ("Аватары", "avatar"), ("Витрины", "showcase"),
+                      ("Темы", "profile_theme"), ("Артефакты", "artifact")]
+        for cat_name, cat_code in categories:
+            widget = QListWidget()
+            widget.setViewMode(QListWidget.ViewMode.IconMode)
+            widget.setIconSize(QSize(64, 64))
+            widget.setResizeMode(QListWidget.ResizeMode.Adjust)
+            widget.setDragEnabled(False)
+            items = self.shop_svc.get_available_items() if cat_code is None else self.shop_svc.get_items_by_category(cat_code)
+            for shop_item in items:
+                item_type = shop_item.item_type
+                icon = QIcon(self.get_icon_path(item_type.icon_url))
+                text = f"{item_type.name}\n"
+                if shop_item.price_coins:
+                    text += f"💰{shop_item.price_coins} "
+                if shop_item.price_crystals:
+                    text += f"💎{shop_item.price_crystals}"
+                list_item = QListWidgetItem(icon, text)
+                list_item.setData(1, shop_item.id)
+                widget.addItem(list_item)
+            widget.itemDoubleClicked.connect(self.buy_item)
+            tabs.addTab(widget, cat_name)
+
+        layout.addWidget(tabs)
+
+        back_btn = QPushButton("Назад в профиль")
+        back_btn.clicked.connect(self.back_to_profile)
+        layout.addWidget(back_btn)
+        self.setLayout(layout)
+
+    def get_icon_path(self, url: str) -> str:
+        # Заглушка: если файла нет, возвращаем пустой путь, виджет использует дефолтную иконку
+        if url and os.path.exists(url):
+            return url
+        return ""  # QIcon с пустым путём покажет пустоту, можно нарисовать цветной квадрат
+
+    def buy_item(self, item):
+        shop_item_id = item.data(1)
+        success = self.shop_svc.purchase_item(self.user.id, shop_item_id)
+        if success:
+            QMessageBox.information(self, "Успех", "Предмет куплен!")
+        else:
+            QMessageBox.warning(self, "Ошибка", "Недостаточно средств.")
+
+    def back_to_profile(self):
+        from gui.windows.profile_window import ProfileWindow
+        self.profile = ProfileWindow(self.user, self.db)
+        self.profile.show()
         self.close()
 ```
 
@@ -2693,6 +3564,128 @@ class TrackSelectionWindow(QWidget):
         self.close()
 ```
 
+services/achievement_service.py ```
+from sqlalchemy.orm import Session
+from database.models.gamification import Achievement, UserAchievement
+from database.models.user import User, UserInventory
+from database.models.progress import TaskAttempt, UserLessonProgress, UserTopicStats,UserTrackProgress
+from database.models.content import Task
+import uuid
+
+class AchievementService:
+    def __init__(self, db: Session):
+        self.db = db
+
+    def check_and_award(self, user_id: uuid.UUID, event_type: str, event_data: dict = None):
+        """После важного действия (завершение урока, серия правильных ответов и т.д.)"""
+        achievements = self.db.query(Achievement).filter(
+            Achievement.condition_type == event_type
+        ).all()
+
+        for ach in achievements:
+            if self._condition_met(ach, user_id, event_data):
+                existing = self.db.query(UserAchievement).filter(
+                    UserAchievement.user_id == user_id,
+                    UserAchievement.achievement_id == ach.id
+                ).first()
+                if not existing:
+                    ua = UserAchievement(user_id=user_id, achievement_id=ach.id)
+                    self.db.add(ua)
+                    # Награда
+                    from services.currency_service import CurrencyService
+                    curr = CurrencyService(self.db)
+                    if ach.xp_reward:
+                        # Здесь нужно сервис прогресса для добавления XP, но передадим обработку вызывающему коду
+                        pass
+                    if ach.coins_reward:
+                        curr.add_coins(user_id, ach.coins_reward)
+                    if ach.crystals_reward:
+                        curr.add_crystals(user_id, ach.crystals_reward)
+                    if ach.item_reward_id:
+                        from services.shop_service import ShopService
+                        shop = ShopService(self.db)
+                        shop.add_item_to_inventory(user_id, ach.item_reward_id)
+                    self.db.commit()
+
+    def _condition_met(self, achievement: Achievement, user_id: uuid.UUID, event_data: dict) -> bool:
+        data = achievement.condition_data
+        if achievement.condition_type == 'complete_lesson':
+            # data: {"count": int}
+            completed = self.db.query(UserLessonProgress).join(
+                UserTrackProgress,
+                UserLessonProgress.user_track_progress_id == UserTrackProgress.id
+            ).filter(
+                UserTrackProgress.user_id == user_id,
+                UserLessonProgress.status == 'completed'
+            ).count()
+            return completed >= data['count']
+        elif achievement.condition_type == 'complete_track':
+            completed = self.db.query(UserTrackProgress).filter(
+                UserTrackProgress.user_id == user_id,
+                UserTrackProgress.status == 'completed'
+            ).count()
+            return completed >= data.get('count', 1)
+        elif achievement.condition_type == 'streak':
+            user = self.db.query(User).filter(User.id == user_id).first()
+            return user.current_streak >= data['days']
+        elif achievement.condition_type == 'count_tasks':
+            count = self.db.query(TaskAttempt).filter(
+                TaskAttempt.user_id == user_id,
+                TaskAttempt.is_correct == True
+            ).count()
+            return count >= data['count']
+        elif achievement.condition_type == 'count_tasks_by_type':
+            count = self.db.query(TaskAttempt).join(Task).filter(
+                TaskAttempt.user_id == user_id,
+                TaskAttempt.is_correct == True,
+                Task.type == data['type']
+            ).count()
+            return count >= data['count']
+        elif achievement.condition_type == 'accuracy':
+            stats = self.db.query(UserTopicStats).filter(UserTopicStats.user_id == user_id).all()
+            total_attempts = sum(s.total_attempts for s in stats)
+            if total_attempts < data.get('min_attempts', 0):
+                return False
+            correct_attempts = sum(s.correct_attempts for s in stats)
+            accuracy = correct_attempts / total_attempts if total_attempts > 0 else 0
+            return accuracy >= data['threshold']
+        elif achievement.condition_type == 'collect_items':
+            inventory_count = self.db.query(UserInventory).filter(
+                UserInventory.user_id == user_id
+            ).count()
+            return inventory_count >= data['count']
+        elif achievement.condition_type == 'showcase_artifacts':
+            artifacts_count = self.db.query(UserInventory).filter(
+                UserInventory.user_id == user_id,
+                UserInventory.is_equipped == True,
+                UserInventory.item_type.has(category='artifact')
+            ).count()
+            return artifacts_count >= data['count']
+        elif achievement.condition_type == 'speed':
+            # Проверяем, есть ли попытка с временем <= max_seconds
+            # event_data должно содержать 'time_spent' для проверки, но это событие при каждой попытке.
+            # Для упрощения сделаем проверку при завершении попытки, если время меньше порога.
+            if event_data and 'time_spent' in event_data:
+                return event_data['time_spent'] <= data['max_seconds']
+            return False
+        return False
+    
+    def get_user_achievements(self, user_id: uuid.UUID) -> list:
+        """Возвращает все достижения пользователя с объектами Achievement."""
+        return self.db.query(UserAchievement).filter(
+            UserAchievement.user_id == user_id
+        ).all()
+
+    def toggle_display(self, user_id: uuid.UUID, achievement_id: int, show: bool):
+        ua = self.db.query(UserAchievement).filter(
+            UserAchievement.user_id == user_id,
+            UserAchievement.id == achievement_id
+        ).first()
+        if ua:
+            ua.is_displayed = show
+            self.db.commit()
+```
+
 services/auth_service.py ```
 import bcrypt
 from database.db import SessionLocal
@@ -2750,6 +3743,93 @@ class AuthService:
             return False, "Неверный пароль"
 
         return True, user
+```
+
+services/challenge_service.py ```
+from datetime import date
+from sqlalchemy.orm import Session
+from database.models.gamification import Challenge, UserChallenge
+import uuid
+
+class ChallengeService:
+    def __init__(self, db: Session):
+        self.db = db
+
+    def get_active_challenges(self, user_id: uuid.UUID):
+        """Возвращает активные ежедневные/еженедельные челленджи пользователя"""
+        today = date.today()
+        # Получаем все активные глобальные челленджи на сегодня
+        global_challenges = self.db.query(Challenge).filter(
+            Challenge.is_active == True,
+            Challenge.valid_from <= today,
+            Challenge.valid_until >= today
+        ).all()
+
+        result = []
+        for ch in global_challenges:
+            uc = self.db.query(UserChallenge).filter(
+                UserChallenge.user_id == user_id,
+                UserChallenge.challenge_id == ch.id
+            ).first()
+            if not uc:
+                uc = UserChallenge(
+                    user_id=user_id,
+                    challenge_id=ch.id,
+                    progress_current=0,
+                    progress_target=ch.condition_data.get('target', 1)
+                )
+                self.db.add(uc)
+                self.db.commit()
+            result.append((ch, uc))
+        return result
+
+    def update_progress(self, user_id: uuid.UUID, event_type: str, amount: int = 1):
+        """Вызывается при совершении действий (завершение урока, задание и т.п.)"""
+        active = self.get_active_challenges(user_id)
+        for ch, uc in active:
+            if ch.condition_type == event_type:
+                uc.progress_current += amount
+                if uc.progress_current >= uc.progress_target and not uc.is_completed:
+                    uc.is_completed = True
+                    # награда будет выдана при запросе (claim)
+                self.db.commit()
+```
+
+services/currency_service.py ```
+from sqlalchemy.orm import Session
+from database.models.user import UserCurrency
+
+class CurrencyService:
+    def __init__(self, db: Session):
+        self.db = db
+
+    def get_or_create_wallet(self, user_id) -> UserCurrency:
+        wallet = self.db.query(UserCurrency).filter(UserCurrency.user_id == user_id).first()
+        if not wallet:
+            wallet = UserCurrency(user_id=user_id, coins=0, crystals=0)
+            self.db.add(wallet)
+            self.db.commit()
+            self.db.refresh(wallet)
+        return wallet
+
+    def add_coins(self, user_id, amount: int):
+        wallet = self.get_or_create_wallet(user_id)
+        wallet.coins += amount
+        self.db.commit()
+
+    def add_crystals(self, user_id, amount: int):
+        wallet = self.get_or_create_wallet(user_id)
+        wallet.crystals += amount
+        self.db.commit()
+
+    def spend(self, user_id, coins: int = 0, crystals: int = 0) -> bool:
+        wallet = self.get_or_create_wallet(user_id)
+        if wallet.coins >= coins and wallet.crystals >= crystals:
+            wallet.coins -= coins
+            wallet.crystals -= crystals
+            self.db.commit()
+            return True
+        return False
 ```
 
 services/friends_service.py ```
@@ -2928,6 +4008,67 @@ class FriendsService:
         return True, "Пользователь удалён из друзей"
 ```
 
+services/leaderboard_service.py ```
+from datetime import date, timedelta
+from sqlalchemy.orm import Session
+from database.models.gamification import LeaderboardCategory, LeaderboardEntry
+from database.models.user import User
+import uuid
+
+class LeaderboardService:
+    def __init__(self, db: Session):
+        self.db = db
+
+    def update_entry(self, user_id: uuid.UUID, metric_type: str, score: float):
+        """Обновляет запись лидерборда для заданной метрики"""
+        category = self.db.query(LeaderboardCategory).filter(
+            LeaderboardCategory.metric_type == metric_type,
+            LeaderboardCategory.is_active == True
+        ).first()
+        if not category:
+            return
+
+        # Определяем период
+        period_start = date.today()
+        if category.reset_period == 'weekly':
+            period_start = period_start - timedelta(days=period_start.weekday())
+        elif category.reset_period == 'monthly':
+            period_start = period_start.replace(day=1)
+        elif category.reset_period == 'daily':
+            period_start = period_start  # уже сегодня
+
+        entry = self.db.query(LeaderboardEntry).filter(
+            LeaderboardEntry.category_id == category.id,
+            LeaderboardEntry.user_id == user_id,
+            LeaderboardEntry.period_start == period_start
+        ).first()
+
+        if entry:
+            if category.metric_type in ('xp_total', 'xp_weekly', 'xp_daily', 'xp_monthly'):
+                entry.score += score  # для XP суммируем
+            else:
+                entry.score = score  # для точности/стриков заменяем
+        else:
+            entry = LeaderboardEntry(
+                category_id=category.id,
+                user_id=user_id,
+                period_start=period_start,
+                score=score,
+                rank=0
+            )
+            self.db.add(entry)
+        self.db.commit()
+
+        # Пересчёт рангов (упрощённо, можно сделать по триггеру или отдельно)
+        entries = self.db.query(LeaderboardEntry).filter(
+            LeaderboardEntry.category_id == category.id,
+            LeaderboardEntry.period_start == period_start
+        ).order_by(LeaderboardEntry.score.desc()).all()
+        for i, e in enumerate(entries, start=1):
+            e.rank = i
+        self.db.commit()
+```
+
 services/lesson_service.py ```
 import uuid
 from sqlalchemy.orm import Session
@@ -3048,6 +4189,279 @@ class ProgressService:
         self.db.commit()
 ```
 
+services/shop_service.py ```
+from sqlalchemy.orm import Session
+from typing import Optional
+from database.models.user import UserInventory, ShopItem, UserShowcase, ItemType
+import uuid
+
+class ShopService:
+    def __init__(self, db: Session):
+        self.db = db
+
+    def get_available_items(self):
+        return self.db.query(ShopItem).filter(ShopItem.is_active == True).all()
+
+    def purchase_item(self, user_id: uuid.UUID, shop_item_id: int) -> bool:
+        from services.currency_service import CurrencyService
+        item = self.db.query(ShopItem).filter(ShopItem.id == shop_item_id).first()
+        if not item:
+            return False
+        curr_svc = CurrencyService(self.db)
+        can_afford = curr_svc.spend(user_id, coins=item.price_coins or 0, crystals=item.price_crystals or 0)
+        if can_afford:
+            self.add_item_to_inventory(user_id, item.item_type_id)
+            return True
+        return False
+
+    def add_item_to_inventory(self, user_id: uuid.UUID, item_type_id: int, quantity=1):
+        existing = self.db.query(UserInventory).filter(
+            UserInventory.user_id == user_id,
+            UserInventory.item_type_id == item_type_id
+        ).first()
+        if existing:
+            existing.quantity += quantity
+        else:
+            inv = UserInventory(user_id=user_id, item_type_id=item_type_id, quantity=quantity)
+            self.db.add(inv)
+        self.db.commit()
+
+    def get_inventory(self, user_id: uuid.UUID):
+        return self.db.query(UserInventory).filter(UserInventory.user_id == user_id).all()
+
+    def place_in_showcase(self, user_id: uuid.UUID, inventory_id: int, slot_number: int, artifact_id: int = None):
+        showcase = UserShowcase(
+            user_id=user_id,
+            showcase_item_id=inventory_id,
+            slot_number=slot_number,
+            artifact_item_id=artifact_id
+        )
+        self.db.add(showcase)
+        self.db.commit()
+
+    def get_items_by_category(self, category: str):
+        """Возвращает ShopItem, отфильтрованные по категории item_type."""
+        return self.db.query(ShopItem).join(ItemType).filter(
+            ShopItem.is_active == True,
+            ItemType.category == category
+        ).all()
+
+    def equip_item(self, user_id: uuid.UUID, inventory_id: int):
+        """Экипирует предмет (аватар, тему, витрину). Снимает предыдущий того же типа."""
+        inv = self.db.query(UserInventory).filter(
+            UserInventory.id == inventory_id, UserInventory.user_id == user_id
+        ).first()
+        if not inv:
+            return False
+        category = inv.item_type.category
+        # Снимаем все экипированные предметы данной категории
+        equipped = self.db.query(UserInventory).filter(
+            UserInventory.user_id == user_id,
+            UserInventory.is_equipped == True,
+            UserInventory.item_type.has(category=category)
+        ).all()
+        for eq in equipped:
+            eq.is_equipped = False
+            eq.equipped_slot = None
+            # Если снимаем витрину, снимаем и артефакты в слотах
+            if category == 'showcase':
+                artifacts = self.db.query(UserInventory).filter(
+                    UserInventory.user_id == user_id,
+                    UserInventory.is_equipped == True,
+                    UserInventory.item_type.has(category='artifact')
+                ).all()
+                for art in artifacts:
+                    art.is_equipped = False
+                    art.equipped_slot = None
+        # Экипируем выбранный
+        inv.is_equipped = True
+        inv.equipped_slot = None  # для аватара/темы слот не нужен
+        self.db.commit()
+        return True
+
+    def unequip_item(self, user_id: uuid.UUID, inventory_id: int):
+        inv = self.db.query(UserInventory).filter(
+            UserInventory.id == inventory_id, UserInventory.user_id == user_id
+        ).first()
+        if inv:
+            inv.is_equipped = False
+            inv.equipped_slot = None
+            self.db.commit()
+
+    def get_equipped_avatar(self, user_id: uuid.UUID) -> Optional[UserInventory]:
+        return self.db.query(UserInventory).filter(
+            UserInventory.user_id == user_id,
+            UserInventory.is_equipped == True,
+            UserInventory.item_type.has(category='avatar')
+        ).first()
+
+    def get_equipped_theme(self, user_id: uuid.UUID) -> Optional[UserInventory]:
+        return self.db.query(UserInventory).filter(
+            UserInventory.user_id == user_id,
+            UserInventory.is_equipped == True,
+            UserInventory.item_type.has(category='profile_theme')
+        ).first()
+
+    def get_active_showcase(self, user_id: uuid.UUID) -> Optional[UserInventory]:
+        return self.db.query(UserInventory).filter(
+            UserInventory.user_id == user_id,
+            UserInventory.is_equipped == True,
+            UserInventory.item_type.has(category='showcase')
+        ).first()
+
+    def get_showcase_slots(self, user_id: uuid.UUID) -> dict:
+        """Возвращает словарь {slot_number: UserInventory artifact} для активной витрины."""
+        showcase = self.get_active_showcase(user_id)
+        if not showcase:
+            return {}
+        artifacts = self.db.query(UserInventory).filter(
+            UserInventory.user_id == user_id,
+            UserInventory.is_equipped == True,
+            UserInventory.item_type.has(category='artifact')
+        ).all()
+        slots = {}
+        for art in artifacts:
+            if art.equipped_slot is not None:
+                slots[art.equipped_slot] = art
+        return slots
+
+    def place_artifact_in_slot(self, user_id: uuid.UUID, artifact_inventory_id: int, slot: int):
+        """Размещает артефакт в слоте активной витрины."""
+        showcase = self.get_active_showcase(user_id)
+        if not showcase:
+            return False, "Нет активной витрины"
+        capacity = showcase.item_type.capacity
+        if slot < 1 or slot > capacity:
+            return False, "Неверный слот"
+        # Проверяем, что артефакт в инвентаре и не экипирован
+        art = self.db.query(UserInventory).filter(
+            UserInventory.id == artifact_inventory_id, UserInventory.user_id == user_id,
+            UserInventory.item_type.has(category='artifact')
+        ).first()
+        if not art:
+            return False, "Артефакт не найден"
+        if art.is_equipped and art.equipped_slot != slot:
+            return False, "Артефакт уже размещён в другом слоте"
+        # Убираем старый артефакт из этого слота
+        old = self.db.query(UserInventory).filter(
+            UserInventory.user_id == user_id,
+            UserInventory.is_equipped == True,
+            UserInventory.equipped_slot == slot,
+            UserInventory.item_type.has(category='artifact')
+        ).first()
+        if old:
+            old.is_equipped = False
+            old.equipped_slot = None
+        # Размещаем новый
+        art.is_equipped = True
+        art.equipped_slot = slot
+        self.db.commit()
+        return True, "Артефакт размещён"
+```
+
+services/spaced_repetition_service.py ```
+from datetime import datetime, timedelta
+from sqlalchemy.orm import Session
+from database.models.content import Task
+from database.models.progress import UserLessonProgress, TaskAttempt, UserTopicStats
+import uuid
+
+class SpacedRepetitionService:
+    def __init__(self, db: Session):
+        self.db = db
+
+    def get_topics_to_repeat(self, user_id: uuid.UUID, limit=5):
+        """
+        Возвращает список тегов тем, которые рекомендовано повторить.
+        Использует простейший алгоритм: низкая точность + прошло > N дней с последней практики.
+        """
+        stats = self.db.query(UserTopicStats).filter(
+            UserTopicStats.user_id == user_id,
+            UserTopicStats.total_attempts >= 3
+        ).all()
+        now = datetime.now()
+        topics = []
+        for s in stats:
+            last_attempt = self.db.query(TaskAttempt).join(TaskAttempt.task).filter(
+                TaskAttempt.user_id == user_id,
+                Task.topic_tags.contains([s.topic_tag])
+            ).order_by(TaskAttempt.created_at.desc()).first()
+            if last_attempt and (now - last_attempt.created_at) > timedelta(days=3):
+                topics.append(s)
+        # Сортируем по возрастанию точности
+        topics.sort(key=lambda x: x.accuracy_rate)
+        return topics[:limit]
+
+    def get_repeat_recommendations(self, user_id: uuid.UUID) -> list:
+        """Возвращает список тегов с рекомендациями"""
+        return [s.topic_tag for s in self.get_topics_to_repeat(user_id)]
+```
+
+services/statistics_service.py ```
+from sqlalchemy.orm import Session
+from database.models.progress import UserTopicStats, TaskAttempt
+from database.models.content import Task
+import uuid
+
+class StatisticsService:
+    def __init__(self, db: Session):
+        self.db = db
+
+    def update_topic_stats(self, user_id: uuid.UUID, topic_tags: list, is_correct: bool, task_type: str = None):
+        """Обновляет статистику по каждому тегу после попытки"""
+        for tag in topic_tags:
+            stats = self.db.query(UserTopicStats).filter(
+                UserTopicStats.user_id == user_id,
+                UserTopicStats.topic_tag == tag
+            ).first()
+            if not stats:
+                stats = UserTopicStats(user_id=user_id, topic_tag=tag)
+                self.db.add(stats)
+
+            if stats.total_attempts:
+                stats.total_attempts += 1
+            else:
+                stats.total_attempts = 1
+
+            if is_correct:
+                if stats.correct_attempts:
+                    stats.correct_attempts += 1
+                else:
+                    stats.correct_attempts = 1
+                if stats.current_streak:
+                    stats.current_streak += 1
+                else:
+                    stats.current_streak = 1
+                if stats.max_streak:
+                    stats.max_streak = max(stats.max_streak, stats.current_streak)
+                else:
+                    stats.max_streak = max(0, stats.current_streak)
+            else:
+                stats.current_streak = 0
+
+            # Обновляем статистику по типам заданий
+            if task_type:
+                type_dict = stats.stats_by_task_type or {}
+                type_data = type_dict.get(task_type, {'total': 0, 'correct': 0})
+                type_data['total'] += 1
+                if is_correct:
+                    type_data['correct'] += 1
+                type_dict[task_type] = type_data
+                stats.stats_by_task_type = type_dict
+
+            # Пересчитываем accuracy_rate
+            stats.accuracy_rate = (stats.correct_attempts / stats.total_attempts) * 100
+            self.db.commit()
+
+    def get_weakest_topics(self, user_id: uuid.UUID, limit=3):
+        """Возвращает темы с самой низкой точностью для повторения"""
+        stats = self.db.query(UserTopicStats).filter(
+            UserTopicStats.user_id == user_id,
+            UserTopicStats.total_attempts >= 3  # минимальный опыт
+        ).order_by(UserTopicStats.accuracy_rate.asc()).limit(limit).all()
+        return stats
+```
+
 services/task_service.py ```
 import json
 import uuid
@@ -3055,6 +4469,7 @@ from datetime import datetime
 from sqlalchemy.orm import Session
 from database.models.content import Task, TaskVariant, TaskGenerator, LessonTask
 from database.models.progress import TaskAttempt
+from services.statistics_service import StatisticsService
 
 class TaskService:
     def __init__(self, db: Session):
@@ -3326,6 +4741,13 @@ class TaskService:
         )
         self.db.add(attempt)
         self.db.commit()
+        stats_svc = StatisticsService(self.db)
+        stats_svc.update_topic_stats(
+            user_id=user_id,
+            topic_tags=task.topic_tags,
+            is_correct=is_correct,
+            task_type=task.type
+        )
         return attempt
 ```
 
@@ -3410,6 +4832,23 @@ class TrackService:
         return new_progress
 ```
 
+basedir.py ```
+import os
+import sys
+
+# Определяем корневую папку проекта (где лежит main.py)
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+def resource_path(relative_path: str) -> str:
+    """Возвращает абсолютный путь к ресурсу. Работает и с PyInstaller."""
+    if getattr(sys, 'frozen', False):
+        # Если приложение собрано в exe
+        base = sys._MEIPASS
+    else:
+        base = BASE_DIR
+    return os.path.normpath(os.path.join(base, relative_path))
+```
+
 main.py ```
 import sys
 
@@ -3424,7 +4863,7 @@ from gui.windows.login_window import LoginWindow
 
 def main():
     init_db()
-    seed_data()
+    # seed_data()
     
     app = QApplication(sys.argv)
     db_session = SessionLocal()

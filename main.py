@@ -11,7 +11,7 @@ from gui.windows.login_window import LoginWindow
 
 def main():
     init_db()
-    seed_data()
+    # seed_data()
     
     app = QApplication(sys.argv)
     db_session = SessionLocal()

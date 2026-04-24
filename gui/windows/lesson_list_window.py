@@ -21,7 +21,7 @@ class LessonListWindow(QWidget):
         self.progress_service = ProgressService(self.db)
 
         self.setWindowTitle(f"Уроки: {track.name}")
-        self.setFixedSize(500, 500)
+        self.setFixedSize(800, 500)
         self.init_ui()
 
     def init_ui(self):

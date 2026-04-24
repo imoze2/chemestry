@@ -47,20 +47,19 @@ class MainMenuWindow(QWidget):
         learn_button = QPushButton("Учиться")
         learn_button.clicked.connect(self.open_learning)
 
-        reference_button = QPushButton("Справочник")
-        reference_button.clicked.connect(self.open_reference)
 
-        reference_button = QPushButton("Доска почёта")
-        reference_button.clicked.connect(self.open_leaderboard)
+        leaderboard_button = QPushButton("Доска почёта")
+        leaderboard_button.clicked.connect(self.open_leaderboard)
 
-        reference_button = QPushButton("Настройки")
-        reference_button.clicked.connect(self.open_settings)
+        settings_button = QPushButton("Настройки")
+        settings_button.clicked.connect(self.open_settings)
 
         exit_button = QPushButton("Выход")
         exit_button.clicked.connect(self.logout)
 
         menu_layout.addWidget(learn_button)
-        menu_layout.addWidget(reference_button)
+        menu_layout.addWidget(leaderboard_button)
+        menu_layout.addWidget(settings_button)
         menu_layout.addWidget(exit_button)
 
         main_layout.addLayout(top_layout)
@@ -87,20 +86,11 @@ class MainMenuWindow(QWidget):
         self.learning_window.show()
         self.close()
 
-    def open_reference(self):
-        print("Открыть справочник")
-
     def open_leaderboard(self):
         print("Открыть доску почёта")
 
     def open_settings(self):
         print("Открыть настройки")
-
-    def open_reference(self):
-        from gui.windows.reference_window import ReferenceWindow
-        self.ref_window = ReferenceWindow(self.user, self.db_session)
-        self.ref_window.show()
-        self.close()
 
     def logout(self):
         from gui.windows.login_window import LoginWindow

@@ -3,6 +3,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QPixmap
+import os
 from services.currency_service import CurrencyService
 from services.shop_service import ShopService
 from services.achievement_service import AchievementService  # нужно добавить метод get_user_achievements
@@ -12,8 +13,10 @@ class ProfileWindow(QWidget):
         super().__init__()
         self.user = user
         self.db = db_session
+        self.shop_svc = ShopService(self.db)
+        self.ach_svc = AchievementService(self.db)
         self.setWindowTitle("Профиль")
-        self.setFixedSize(600, 600)
+        self.setFixedSize(700, 700)
         self.init_ui()
 
     def init_ui(self):
@@ -26,18 +29,25 @@ class ProfileWindow(QWidget):
         friends_btn.clicked.connect(self.open_friends)
         store_btn = QPushButton("Магазин")
         store_btn.clicked.connect(self.open_store)
+        settings_btn = QPushButton("Настроить профиль")
+        settings_btn.clicked.connect(self.open_settings)
         top.addWidget(back_btn)
         top.addStretch()
         top.addWidget(friends_btn)
         top.addWidget(store_btn)
+        top.addWidget(settings_btn)
         layout.addLayout(top)
 
         # Аватар
-        avatar = QLabel()
-        pix = QPixmap("C:\\0.0.Diploma2\\profile.png")
-        avatar.setPixmap(pix.scaled(80, 80, Qt.AspectRatioMode.KeepAspectRatio))
-        avatar.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(avatar)
+        avatar_label = QLabel()
+        avatar_inv = self.shop_svc.get_equipped_avatar(self.user.id)
+        if avatar_inv and avatar_inv.item_type.icon_url:
+            pix = QPixmap(avatar_inv.item_type.icon_url)
+        else:
+            pix = QPixmap("C:\\0.0.Diploma2\\profile.png")
+        avatar_label.setPixmap(pix.scaled(80, 80, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
+        avatar_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(avatar_label)
 
         username = QLabel(self.user.username)
         username.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -52,31 +62,77 @@ class ProfileWindow(QWidget):
         layout.addWidget(currency_label)
 
         # Витрина (горизонтальный скролл)
-        layout.addWidget(QLabel("Витрина"))
-        self.showcase_scroll = self.create_showcase()
-        layout.addWidget(self.showcase_scroll)
+        layout.addWidget(QLabel("Моя витрина"))
+        showcase_container = self.create_showcase_display()
+        layout.addWidget(showcase_container)
 
         # Достижения
         layout.addWidget(QLabel("Достижения"))
-        self.achievements_scroll = self.create_achievements()
-        layout.addWidget(self.achievements_scroll)
+        ach_scroll = self.create_achievements_display()
+        layout.addWidget(ach_scroll)
 
         self.setLayout(layout)
 
-    def create_showcase(self):
+    def create_showcase_display(self):
+        """Отображает активную витрину с размещёнными артефактами."""
+        widget = QWidget()
+        layout = QHBoxLayout()
+        active = self.shop_svc.get_active_showcase(self.user.id)
+        if not active:
+            layout.addWidget(QLabel("Нет активной витрины. Купите и выберите в настройках."))
+            widget.setLayout(layout)
+            return widget
+
+        capacity = active.item_type.capacity
+        slots = self.shop_svc.get_showcase_slots(self.user.id)
+        # Рисуем витрину как рамку с иконками артефактов в слотах
+        # Для простоты используем горизонтальный ряд квадратов
+        for slot_num in range(1, capacity+1):
+            slot_widget = QWidget()
+            slot_layout = QVBoxLayout()
+            slot_widget.setFixedSize(80, 80)
+            slot_widget.setStyleSheet("background-color: #202020; border: 1px solid gray;")
+            if slot_num in slots:
+                art_inv = slots[slot_num]
+                icon_label = QLabel()
+                pix = QPixmap(art_inv.item_type.icon_url) if os.path.exists(art_inv.item_type.icon_url) else QPixmap()
+                if pix.isNull():
+                    # Заглушка: цветной круг с буквой
+                    icon_label.setText(art_inv.item_type.name[0])
+                    icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                    icon_label.setStyleSheet("font-size: 20px; color: white;")
+                else:
+                    icon_label.setPixmap(pix.scaled(70, 70, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
+                slot_layout.addWidget(icon_label)
+            else:
+                slot_layout.addWidget(QLabel("Пусто"), alignment=Qt.AlignmentFlag.AlignCenter)
+            slot_widget.setLayout(slot_layout)
+            layout.addWidget(slot_widget)
+        widget.setLayout(layout)
         scroll = QScrollArea()
+        scroll.setWidget(widget)
         scroll.setWidgetResizable(True)
         scroll.setFixedHeight(120)
+        return scroll
+
+    def create_achievements_display(self):
+        """Отображает достижения, отмеченные для показа в профиле."""
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFixedHeight(100)
         container = QWidget()
         h_layout = QHBoxLayout()
-        shop_svc = ShopService(self.db)
-        inventory = shop_svc.get_inventory(self.user.id)
-        for inv in inventory:
-            if inv.is_equipped == False and inv.item_type.category == 'showcase':  # только витрины
+        user_achievements = self.ach_svc.get_user_achievements(self.user.id)
+        displayed = [ua for ua in user_achievements if ua.is_displayed]
+        if not displayed:
+            h_layout.addWidget(QLabel("Нет достижений для отображения."))
+        else:
+            for ua in displayed:
                 frame = QFrame()
-                frame.setFixedSize(80, 80)
-                frame.setStyleSheet("background-color: #303030; border: 1px solid gray;")
-                lbl = QLabel(inv.item_type.name)
+                frame.setFixedSize(70, 70)
+                frame.setStyleSheet("background-color: #202020; border: 1px solid gold;")
+                lbl = QLabel(ua.achievement.name)
+                lbl.setWordWrap(True)
                 lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
                 f_layout = QVBoxLayout(frame)
                 f_layout.addWidget(lbl)
@@ -84,32 +140,13 @@ class ProfileWindow(QWidget):
         container.setLayout(h_layout)
         scroll.setWidget(container)
         return scroll
-
-    def create_achievements(self):
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFixedHeight(100)
-        container = QWidget()
-        h_layout = QHBoxLayout()
-        from database.models.gamification import UserAchievement
-        achievements = self.db.query(UserAchievement).filter(
-            UserAchievement.user_id == self.user.id,
-            UserAchievement.shown_to_user == True
-        ).all()
-        for ua in achievements:
-            frame = QFrame()
-            frame.setFixedSize(70, 70)
-            frame.setStyleSheet("background-color: #202020; border: 1px solid gold;")
-            lbl = QLabel(ua.achievement.name)
-            lbl.setWordWrap(True)
-            lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            f_layout = QVBoxLayout(frame)
-            f_layout.addWidget(lbl)
-            h_layout.addWidget(frame)
-        container.setLayout(h_layout)
-        scroll.setWidget(container)
-        return scroll
-
+    
+    def open_settings(self):
+        from gui.windows.profile_settings_window import ProfileSettingsWindow
+        self.settings_win = ProfileSettingsWindow(self.user, self.db)
+        self.settings_win.show()
+        self.close()
+    
     def open_store(self):
         from gui.windows.store_window import StoreWindow
         self.store = StoreWindow(self.user, self.db)

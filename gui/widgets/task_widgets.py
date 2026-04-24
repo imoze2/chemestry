@@ -88,18 +88,33 @@ class MatchTaskWidget(BaseTaskWidget):
         layout.addWidget(QLabel("Сопоставьте элементы из левой колонки с правой:"))
 
         grid = QGridLayout()
-        self.left_items = self.variant_data.get('left_items', [])
-        random.shuffle(self.left_items)
-        self.right_items = self.variant_data.get('right_items', [])
-        random.shuffle(self.right_items)
+        
+        # Сохраняем исходное соответствие индексов перед перемешиванием
+        left_items = self.variant_data.get('left_items', [])
+        right_items = self.variant_data.get('right_items', [])
+        
+        # Формируем пары (исходный_индекс, значение) и перемешиваем
+        left_pairs = list(enumerate(left_items))
+        right_pairs = list(enumerate(right_items))
+        random.shuffle(left_pairs)
+        random.shuffle(right_pairs)
+        
+        # Извлекаем тексты и исходные индексы
+        self.left_original_indices = [orig for orig, _ in left_pairs]
+        self.left_texts = [text for _, text in left_pairs]
+        
+        self.right_original_indices = [orig for orig, _ in right_pairs]
+        self.right_texts = [text for _, text in right_pairs]
+        
         self.combos = []
 
-        for i, left in enumerate(self.left_items):
-            label = QLabel(left)
+        for i, left_text in enumerate(self.left_texts):
+            label = QLabel(left_text)
             combo = QComboBox()
             combo.addItem("Выберите...", None)
-            for j, right in enumerate(self.right_items):
-                combo.addItem(right, j)
+            for j, right_text in enumerate(self.right_texts):
+                # В userData храним исходный индекс правого элемента
+                combo.addItem(right_text, self.right_original_indices[j])
             grid.addWidget(label, i, 0)
             grid.addWidget(combo, i, 1)
             self.combos.append(combo)
@@ -114,9 +129,10 @@ class MatchTaskWidget(BaseTaskWidget):
     def get_answer(self):
         matches = {}
         for i, combo in enumerate(self.combos):
-            idx = combo.currentData()
-            if idx is not None:
-                matches[str(i)] = idx
+            orig_left_idx = self.left_original_indices[i]
+            orig_right_idx = combo.currentData()  # исходный индекс правого элемента
+            if orig_right_idx is not None:
+                matches[str(orig_left_idx)] = orig_right_idx
         return {'matches': matches}
 
 

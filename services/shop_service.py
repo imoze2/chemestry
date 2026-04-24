@@ -1,4 +1,5 @@
 from sqlalchemy.orm import Session
+from typing import Optional
 from database.models.user import UserInventory, ShopItem, UserShowcase, ItemType
 import uuid
 
@@ -36,17 +37,6 @@ class ShopService:
     def get_inventory(self, user_id: uuid.UUID):
         return self.db.query(UserInventory).filter(UserInventory.user_id == user_id).all()
 
-    def equip_item(self, user_id: uuid.UUID, inventory_id: int, slot: int = None):
-        """Экипирует предмет (аватар, тему и т.п.)"""
-        item = self.db.query(UserInventory).filter(UserInventory.id == inventory_id).first()
-        if item and item.user_id == user_id:
-            # Снять текущую экипировку этой категории
-            type_category = item.item_type.category
-            # ...
-            item.is_equipped = True
-            item.equipped_slot = slot
-            self.db.commit()
-
     def place_in_showcase(self, user_id: uuid.UUID, inventory_id: int, slot_number: int, artifact_id: int = None):
         showcase = UserShowcase(
             user_id=user_id,
@@ -56,3 +46,122 @@ class ShopService:
         )
         self.db.add(showcase)
         self.db.commit()
+
+    def get_items_by_category(self, category: str):
+        """Возвращает ShopItem, отфильтрованные по категории item_type."""
+        return self.db.query(ShopItem).join(ItemType).filter(
+            ShopItem.is_active == True,
+            ItemType.category == category
+        ).all()
+
+    def equip_item(self, user_id: uuid.UUID, inventory_id: int):
+        """Экипирует предмет (аватар, тему, витрину). Снимает предыдущий того же типа."""
+        inv = self.db.query(UserInventory).filter(
+            UserInventory.id == inventory_id, UserInventory.user_id == user_id
+        ).first()
+        if not inv:
+            return False
+        category = inv.item_type.category
+        # Снимаем все экипированные предметы данной категории
+        equipped = self.db.query(UserInventory).filter(
+            UserInventory.user_id == user_id,
+            UserInventory.is_equipped == True,
+            UserInventory.item_type.has(category=category)
+        ).all()
+        for eq in equipped:
+            eq.is_equipped = False
+            eq.equipped_slot = None
+            # Если снимаем витрину, снимаем и артефакты в слотах
+            if category == 'showcase':
+                artifacts = self.db.query(UserInventory).filter(
+                    UserInventory.user_id == user_id,
+                    UserInventory.is_equipped == True,
+                    UserInventory.item_type.has(category='artifact')
+                ).all()
+                for art in artifacts:
+                    art.is_equipped = False
+                    art.equipped_slot = None
+        # Экипируем выбранный
+        inv.is_equipped = True
+        inv.equipped_slot = None  # для аватара/темы слот не нужен
+        self.db.commit()
+        return True
+
+    def unequip_item(self, user_id: uuid.UUID, inventory_id: int):
+        inv = self.db.query(UserInventory).filter(
+            UserInventory.id == inventory_id, UserInventory.user_id == user_id
+        ).first()
+        if inv:
+            inv.is_equipped = False
+            inv.equipped_slot = None
+            self.db.commit()
+
+    def get_equipped_avatar(self, user_id: uuid.UUID) -> Optional[UserInventory]:
+        return self.db.query(UserInventory).filter(
+            UserInventory.user_id == user_id,
+            UserInventory.is_equipped == True,
+            UserInventory.item_type.has(category='avatar')
+        ).first()
+
+    def get_equipped_theme(self, user_id: uuid.UUID) -> Optional[UserInventory]:
+        return self.db.query(UserInventory).filter(
+            UserInventory.user_id == user_id,
+            UserInventory.is_equipped == True,
+            UserInventory.item_type.has(category='profile_theme')
+        ).first()
+
+    def get_active_showcase(self, user_id: uuid.UUID) -> Optional[UserInventory]:
+        return self.db.query(UserInventory).filter(
+            UserInventory.user_id == user_id,
+            UserInventory.is_equipped == True,
+            UserInventory.item_type.has(category='showcase')
+        ).first()
+
+    def get_showcase_slots(self, user_id: uuid.UUID) -> dict:
+        """Возвращает словарь {slot_number: UserInventory artifact} для активной витрины."""
+        showcase = self.get_active_showcase(user_id)
+        if not showcase:
+            return {}
+        artifacts = self.db.query(UserInventory).filter(
+            UserInventory.user_id == user_id,
+            UserInventory.is_equipped == True,
+            UserInventory.item_type.has(category='artifact')
+        ).all()
+        slots = {}
+        for art in artifacts:
+            if art.equipped_slot is not None:
+                slots[art.equipped_slot] = art
+        return slots
+
+    def place_artifact_in_slot(self, user_id: uuid.UUID, artifact_inventory_id: int, slot: int):
+        """Размещает артефакт в слоте активной витрины."""
+        showcase = self.get_active_showcase(user_id)
+        if not showcase:
+            return False, "Нет активной витрины"
+        capacity = showcase.item_type.capacity
+        if slot < 1 or slot > capacity:
+            return False, "Неверный слот"
+        # Проверяем, что артефакт в инвентаре и не экипирован
+        art = self.db.query(UserInventory).filter(
+            UserInventory.id == artifact_inventory_id, UserInventory.user_id == user_id,
+            UserInventory.item_type.has(category='artifact')
+        ).first()
+        if not art:
+            return False, "Артефакт не найден"
+        if art.is_equipped and art.equipped_slot != slot:
+            return False, "Артефакт уже размещён в другом слоте"
+        # Убираем старый артефакт из этого слота
+        old = self.db.query(UserInventory).filter(
+            UserInventory.user_id == user_id,
+            UserInventory.is_equipped == True,
+            UserInventory.equipped_slot == slot,
+            UserInventory.item_type.has(category='artifact')
+        ).first()
+        if old:
+            old.is_equipped = False
+            old.equipped_slot = None
+        # Размещаем новый
+        art.is_equipped = True
+        art.equipped_slot = slot
+        self.db.commit()
+        return True, "Артефакт размещён"

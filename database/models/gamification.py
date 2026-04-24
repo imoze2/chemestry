@@ -39,6 +39,7 @@ class UserAchievement(Base):
     achievement_id = Column(Integer, ForeignKey("achievements.id", ondelete="CASCADE"), nullable=False)
     unlocked_at = Column(DateTime, server_default=func.now())
     shown_to_user = Column(Boolean, default=False)
+    is_displayed = Column(Boolean, default=True)
 
     user = relationship("User", back_populates="achievements")
     achievement = relationship("Achievement", back_populates="user_achievements")

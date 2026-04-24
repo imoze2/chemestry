@@ -45,15 +45,6 @@ def init_db():
     # Создаём все таблицы, если их нет
     Base.metadata.create_all(bind=engine)
 
-    # Создаём дополнительные индексы, которые SQLAlchemy не создаёт автоматически
-    with engine.connect() as conn:
-        # GIN индекс для полнотекстового поиска в справочнике
-        conn.execute(text("""
-            CREATE INDEX IF NOT EXISTS idx_reference_search
-            ON reference_search_index USING GIN(search_vector);
-        """))
-        conn.commit()
-
 if __name__ == "__main__":
     init_db()
     print("База данных инициализирована.")

@@ -1,0 +1,204 @@
+from PyQt6.QtWidgets import (
+    QWidget, QVBoxLayout, QTabWidget, QLabel, QListWidget, QListWidgetItem,
+    QPushButton, QHBoxLayout, QComboBox, QMessageBox
+)
+from PyQt6.QtCore import Qt
+from services.shop_service import ShopService
+from services.achievement_service import AchievementService
+
+class ProfileSettingsWindow(QWidget):
+    def __init__(self, user, db_session):
+        super().__init__()
+        self.user = user
+        self.db = db_session
+        self.shop_svc = ShopService(self.db)
+        self.ach_svc = AchievementService(self.db)
+        self.setWindowTitle("Настройки профиля")
+        self.setFixedSize(600, 500)
+        self.init_ui()
+
+    def init_ui(self):
+        layout = QVBoxLayout()
+        tabs = QTabWidget()
+
+        # Вкладка Аватар
+        avatar_widget = self.create_avatar_tab()
+        tabs.addTab(avatar_widget, "Аватар")
+
+        # Вкладка Тема
+        theme_widget = self.create_theme_tab()
+        tabs.addTab(theme_widget, "Тема")
+
+        # Вкладка Витрина
+        showcase_widget = self.create_showcase_tab()
+        tabs.addTab(showcase_widget, "Витрина")
+
+        # Вкладка Достижения
+        achievements_widget = self.create_achievements_tab()
+        tabs.addTab(achievements_widget, "Достижения")
+
+        layout.addWidget(tabs)
+
+        back_btn = QPushButton("Назад в профиль")
+        back_btn.clicked.connect(self.back_to_profile)
+        layout.addWidget(back_btn)
+        self.setLayout(layout)
+
+    def create_avatar_tab(self):
+        widget = QWidget()
+        layout = QVBoxLayout()
+        layout.addWidget(QLabel("Выберите аватар из вашего инвентаря:"))
+        list_widget = QListWidget()
+        # Получаем все аватары в инвентаре
+        inventory = self.shop_svc.get_inventory(self.user.id)
+        equipped_avatar = self.shop_svc.get_equipped_avatar(self.user.id)
+        for inv in inventory:
+            if inv.item_type.category != 'avatar':
+                continue
+            item = QListWidgetItem(inv.item_type.name)
+            item.setData(1, inv.id)
+            if equipped_avatar and inv.id == equipped_avatar.id:
+                item.setSelected(True)
+            list_widget.addItem(item)
+        list_widget.itemClicked.connect(self.equip_avatar)
+        layout.addWidget(list_widget)
+        widget.setLayout(layout)
+        return widget
+
+    def equip_avatar(self, item):
+        inv_id = item.data(1)
+        self.shop_svc.equip_item(self.user.id, inv_id)
+        QMessageBox.information(self, "Аватар", "Аватар обновлён!")
+
+    def create_theme_tab(self):
+        widget = QWidget()
+        layout = QVBoxLayout()
+        layout.addWidget(QLabel("Выберите тему профиля:"))
+        list_widget = QListWidget()
+        inventory = self.shop_svc.get_inventory(self.user.id)
+        equipped_theme = self.shop_svc.get_equipped_theme(self.user.id)
+        for inv in inventory:
+            if inv.item_type.category != 'profile_theme':
+                continue
+            item = QListWidgetItem(inv.item_type.name)
+            item.setData(1, inv.id)
+            if equipped_theme and inv.id == equipped_theme.id:
+                item.setSelected(True)
+            list_widget.addItem(item)
+        list_widget.itemClicked.connect(self.equip_theme)
+        layout.addWidget(list_widget)
+        widget.setLayout(layout)
+        return widget
+
+    def equip_theme(self, item):
+        inv_id = item.data(1)
+        self.shop_svc.equip_item(self.user.id, inv_id)
+        QMessageBox.information(self, "Тема", "Тема обновлена!")
+
+    def create_showcase_tab(self):
+        widget = QWidget()
+        layout = QVBoxLayout()
+        layout.addWidget(QLabel("Управление витриной"))
+
+        # Выбор активной витрины
+        layout.addWidget(QLabel("Активная витрина:"))
+        self.showcase_combo = QComboBox()
+        inventory = self.shop_svc.get_inventory(self.user.id)
+        self.showcase_ids = []
+        for inv in inventory:
+            if inv.item_type.category == 'showcase':
+                self.showcase_combo.addItem(f"{inv.item_type.name} (вместимость {inv.item_type.capacity})", inv.id)
+                self.showcase_ids.append(inv.id)
+        active = self.shop_svc.get_active_showcase(self.user.id)
+        if active:
+            idx = self.showcase_ids.index(active.id) if active.id in self.showcase_ids else 0
+            self.showcase_combo.setCurrentIndex(idx)
+        self.showcase_combo.currentIndexChanged.connect(self.on_showcase_changed)
+        layout.addWidget(self.showcase_combo)
+
+        # Слоты витрины
+        layout.addWidget(QLabel("Заполнение слотов:"))
+        self.slots_layout = QVBoxLayout()  # будет перестраиваться
+        layout.addLayout(self.slots_layout)
+        self.refresh_slots()
+
+        widget.setLayout(layout)
+        return widget
+
+    def on_showcase_changed(self):
+        # Сделать выбранную витрину активной
+        if self.showcase_combo.currentIndex() >= 0:
+            inv_id = self.showcase_combo.currentData()
+            self.shop_svc.equip_item(self.user.id, inv_id)
+            self.refresh_slots()
+
+    def refresh_slots(self):
+        # Очищаем и перестраиваем слоты
+        while self.slots_layout.count():
+            child = self.slots_layout.takeAt(0)
+            if child.widget():
+                child.widget().deleteLater()
+        active = self.shop_svc.get_active_showcase(self.user.id)
+        if not active:
+            self.slots_layout.addWidget(QLabel("Нет активной витрины"))
+            return
+        capacity = active.item_type.capacity
+        slots = self.shop_svc.get_showcase_slots(self.user.id)
+        # Получаем список доступных артефактов (не экипированных)
+        inventory = self.shop_svc.get_inventory(self.user.id)
+        available_artifacts = [inv for inv in inventory if inv.item_type.category == 'artifact' and not inv.is_equipped]
+        for slot_num in range(1, capacity+1):
+            slot_widget = QWidget()
+            slot_layout = QHBoxLayout()
+            slot_layout.addWidget(QLabel(f"Слот {slot_num}:"))
+            combo = QComboBox()
+            combo.addItem("Пусто", None)
+            current_artifact = slots.get(slot_num)
+            selected_idx = 0
+            for i, art in enumerate(available_artifacts):
+                combo.addItem(art.item_type.name, art.id)
+                if current_artifact and art.id == current_artifact.id:
+                    selected_idx = i+1
+            combo.setCurrentIndex(selected_idx)
+            combo.currentIndexChanged.connect(lambda idx, s=slot_num, c=combo: self.place_artifact(s, c))
+            slot_layout.addWidget(combo)
+            slot_widget.setLayout(slot_layout)
+            self.slots_layout.addWidget(slot_widget)
+
+    def place_artifact(self, slot, combo):
+        inv_id = combo.currentData()
+        if inv_id is not None:
+            success, msg = self.shop_svc.place_artifact_in_slot(self.user.id, inv_id, slot)
+            if not success:
+                QMessageBox.warning(self, "Ошибка", msg)
+            else:
+                QMessageBox.information(self, "Витрина", "Артефакт размещён")
+                self.refresh_slots()
+        else:
+            # Пока просто обновим отображение
+            self.refresh_slots()
+
+    def create_achievements_tab(self):
+        widget = QWidget()
+        layout = QVBoxLayout()
+        layout.addWidget(QLabel("Отметьте достижения, которые будут видны в профиле:"))
+        user_achievements = self.ach_svc.get_user_achievements(self.user.id)
+        if not user_achievements:
+            layout.addWidget(QLabel("У вас пока нет достижений."))
+        for ua in user_achievements:
+            cb = QPushButton(f"{ua.achievement.name} {'✅' if ua.is_displayed else '❌'}")
+            cb.setCheckable(True)
+            cb.setChecked(ua.is_displayed)
+            cb.clicked.connect(lambda checked, ua=ua: self.toggle_achievement_display(ua.id, checked))
+            layout.addWidget(cb)
+        widget.setLayout(layout)
+        return widget
+
+    def toggle_achievement_display(self, ua_id, show):
+        self.ach_svc.toggle_display(self.user.id, ua_id, show)
+
+    def back_to_profile(self):
+        from gui.windows.profile_window import ProfileWindow
+        self.profile = ProfileWindow(self.user, self.db)
+        self.profile.show()
+        self.close()

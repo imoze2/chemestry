@@ -74,6 +74,7 @@ class ItemType(Base):
     icon_url = Column(String(255))
     max_stack = Column(Integer, default=1)
     is_purchasable = Column(Boolean, default=True)
+    capacity = Column(Integer, default=0)
 
     shop_items = relationship("ShopItem", back_populates="item_type")
     inventories = relationship("UserInventory", back_populates="item_type")

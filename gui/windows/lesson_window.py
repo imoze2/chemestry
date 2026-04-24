@@ -6,6 +6,8 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QPixmap
 from sqlalchemy import func
+
+from basedir import resource_path
 from database.db import SessionLocal
 from services.lesson_service import LessonService
 from services.task_service import TaskService
@@ -105,7 +107,7 @@ class LessonWindow(QWidget):
                     content_layout.addWidget(label)
                 elif block['type'] == 'image':
                     # Изображение (путь к файлу)
-                    pixmap = QPixmap(block['src'])
+                    pixmap = QPixmap(resource_path(block['src']))
                     if not pixmap.isNull():
                         img_label = QLabel()
                         img_label.setPixmap(pixmap.scaledToWidth(600, Qt.TransformationMode.SmoothTransformation))
@@ -240,10 +242,11 @@ class LessonWindow(QWidget):
         else:
             QMessageBox.warning(self, "Результат", "Неправильно!")
 
-        # Разрешаем переход к следующему
-        self.next_btn.setEnabled(True)
-        # Если это было последнее задание, возможно сразу завершить
-        if idx == len(self.lesson_tasks) - 1:
+        # Разрешаем переход к следующему только если это не последнее задание
+        if idx < len(self.lesson_tasks) - 1:
+            self.next_btn.setEnabled(True)
+        else:
+            self.next_btn.setEnabled(False)  # на всякий случай деактивируем
             self.finish_btn.setEnabled(True)
 
     def next_task(self):
@@ -264,7 +267,7 @@ class LessonWindow(QWidget):
         lesson_progress = self.progress_service.get_or_create_lesson_progress(
             track_progress.id, self.lesson.id
         )
-        if not lesson_progress.theory_viewed:
+        if len(self.content['theory']) > 0 and not lesson_progress.theory_viewed:
             QMessageBox.warning(self, "Ошибка", "Сначала изучите теорию!")
             return
 
