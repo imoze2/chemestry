@@ -5,10 +5,13 @@ from database.models.content import (
     Track, Lesson, LessonVersion, Theory, LessonTheory,
     TaskGenerator, Task, TaskVariant, LessonTask
 )
-from database.models.user import ItemType, ShopItem
-from database.models.gamification import Achievement
+from database.models.user import User, UserCurrency, UserInventory, UserShowcase, ItemType, ShopItem
+from database.models.gamification import Achievement, UserAchievement
+from database.models.progress import UserTrackProgress, UserLessonProgress
+from services.auth_service import AuthService
 from sqlalchemy import text
 import random
+import datetime
 
 def clear_content(db):
     """Удаляем все данные контента в правильном порядке, чтобы избежать FK ошибок"""
@@ -87,6 +90,86 @@ def seed_shop_data(db):
         db.add(ShopItem(item_type_id=item_type.id, price_coins=75, price_crystals=5, is_active=True))
     db.commit()
     print("Магазин заполнен.")
+
+def seed_test_user(db):
+    """Создаёт тестового пользователя со всем открытым контентом, валютой и достижениями."""
+    test_username = "testuser"
+    existing = db.query(User).filter(User.username == test_username).first()
+    if existing:
+        db.delete(existing)
+        db.commit()
+        print("Удалён старый тестовый пользователь.")
+
+    # Хешируем пароль
+    hashed_pw = AuthService.hash_password("testpass")
+    user = User(
+        username=test_username,
+        email="testuser@example.com",
+        password_hash=hashed_pw,
+        current_streak=100,
+        longest_streak=200,
+        last_active=datetime.datetime.now()
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    user_id = user.id
+
+    # Кошелёк с кучей валют
+    wallet = UserCurrency(user_id=user_id, coins=99999, crystals=9999)
+    db.add(wallet)
+    db.commit()
+
+    # Проходим все треки и все уроки
+    tracks = db.query(Track).filter(Track.is_published == True).all()
+    for track in tracks:
+        tp = UserTrackProgress(
+            user_id=user_id,
+            track_id=track.id,
+            status='completed',
+            started_at=datetime.datetime.now() - datetime.timedelta(days=30),
+            completed_at=datetime.datetime.now(),
+            is_repeating=False,
+            total_xp=track.lessons.count() * 50,
+            current_lesson_index=track.lessons.count() - 1
+        )
+        db.add(tp)
+        db.flush()  # чтобы получить tp.id
+
+        for lesson in track.lessons:
+            version = lesson.versions[0] if lesson.versions else None
+            lp = UserLessonProgress(
+                user_track_progress_id=tp.id,
+                lesson_id=lesson.id,
+                version_id=version.id if version else None,
+                status='completed',
+                theory_viewed=True,
+                theory_viewed_at=datetime.datetime.now() - datetime.timedelta(days=10),
+                tasks_completed=len(lesson.task_links),
+                tasks_total=len(lesson.task_links),
+                score_earned=len(lesson.task_links),
+                score_total=len(lesson.task_links),
+                started_at=datetime.datetime.now() - datetime.timedelta(days=10),
+                completed_at=datetime.datetime.now() - datetime.timedelta(days=9),
+                is_skipped=False
+            )
+            db.add(lp)
+    db.commit()
+
+    # Все достижения
+    achievements = db.query(Achievement).all()
+    for ach in achievements:
+        ua = UserAchievement(
+            user_id=user_id,
+            achievement_id=ach.id,
+            unlocked_at=datetime.datetime.now(),
+            shown_to_user=True,
+            is_displayed=True
+        )
+        db.add(ua)
+    db.commit()
+
+    print(f"Тестовый пользователь '{test_username}' (пароль 'testpass') создан со всеми разблокировками.")
 
 def seed_achievements(db):
     """Создаёт базовый набор достижений."""
@@ -718,6 +801,7 @@ def seed_data():
 
     seed_shop_data(db)
     seed_achievements(db)
+    seed_test_user(db) 
 
     print("Реальный контент успешно добавлен.")
 

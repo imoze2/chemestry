@@ -1,8 +1,11 @@
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QLabel, QPushButton, QScrollArea, QGridLayout, QMessageBox, QTabWidget, QListWidget, QListWidgetItem, QHBoxLayout
-from PyQt6.QtGui import QPixmap, QIcon
+from PyQt6.QtGui import QPixmap, QIcon, QColor
 from PyQt6.QtCore import QSize
+from PyQt6.QtCore import Qt
 from services.shop_service import ShopService
 import os
+import sys
+from basedir import resource_path
 
 class StoreWindow(QWidget):
     def __init__(self, user, db_session):
@@ -33,7 +36,7 @@ class StoreWindow(QWidget):
             items = self.shop_svc.get_available_items() if cat_code is None else self.shop_svc.get_items_by_category(cat_code)
             for shop_item in items:
                 item_type = shop_item.item_type
-                icon = QIcon(self.get_icon_path(item_type.icon_url))
+                icon = self.get_icon(item_type.icon_url)
                 text = f"{item_type.name}\n"
                 if shop_item.price_coins:
                     text += f"💰{shop_item.price_coins} "
@@ -52,11 +55,27 @@ class StoreWindow(QWidget):
         layout.addWidget(back_btn)
         self.setLayout(layout)
 
-    def get_icon_path(self, url: str) -> str:
-        # Заглушка: если файла нет, возвращаем пустой путь, виджет использует дефолтную иконку
-        if url and os.path.exists(url):
-            return url
-        return ""  # QIcon с пустым путём покажет пустоту, можно нарисовать цветной квадрат
+    def get_icon(self, url: str) -> QIcon:
+        """Создаёт QIcon с отладочной проверкой и заглушкой при ошибке."""
+        if not url:
+            # Заглушка – серый квадрат
+            pix = QPixmap(64, 64)
+            pix.fill(QColor(100, 100, 100))
+            return QIcon(pix)
+
+        abs_path = resource_path(url)
+        if not os.path.exists(abs_path):
+            print(f"DEBUG: Файл не найден: {abs_path}")
+            pix = QPixmap(64, 64)
+            pix.fill(QColor(200, 0, 0))  # красный квадрат для отсутствующей иконки
+            return QIcon(pix)
+
+        pix = QPixmap(abs_path)
+        if pix.isNull():
+            print(f"DEBUG: QPixmap не загрузился: {abs_path}")
+            pix = QPixmap(64, 64)
+            pix.fill(QColor(200, 200, 0))  # жёлтый – ошибка чтения
+        return QIcon(pix)
 
     def buy_item(self, item):
         shop_item_id = item.data(1)
