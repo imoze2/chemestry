@@ -6,9 +6,11 @@ from database.models.content import (
     TaskGenerator, Task, TaskVariant, LessonTask
 )
 from database.models.user import User, UserCurrency, UserInventory, UserShowcase, ItemType, ShopItem
-from database.models.gamification import Achievement, UserAchievement
+from database.models.gamification import Achievement, UserAchievement, LeaderboardCategory
 from database.models.progress import UserTrackProgress, UserLessonProgress
 from services.auth_service import AuthService
+from services.leaderboard_service import LeaderboardService
+from services.statistics_service import StatisticsService
 from sqlalchemy import text
 import random
 import datetime
@@ -93,7 +95,8 @@ def seed_shop_data(db):
 
 def seed_test_user(db):
     """Создаёт тестового пользователя со всем открытым контентом, валютой и достижениями."""
-    test_username = "testuser"
+    test_username = "0"
+    test_password = "0"
     existing = db.query(User).filter(User.username == test_username).first()
     if existing:
         db.delete(existing)
@@ -101,13 +104,13 @@ def seed_test_user(db):
         print("Удалён старый тестовый пользователь.")
 
     # Хешируем пароль
-    hashed_pw = AuthService.hash_password("testpass")
+    hashed_pw = AuthService.hash_password(test_password)
     user = User(
         username=test_username,
-        email="testuser@example.com",
+        email="0@example.com",
         password_hash=hashed_pw,
-        current_streak=100,
-        longest_streak=200,
+        current_streak=15,
+        longest_streak=30,
         last_active=datetime.datetime.now()
     )
     db.add(user)
@@ -123,6 +126,7 @@ def seed_test_user(db):
     # Проходим все треки и все уроки
     tracks = db.query(Track).filter(Track.is_published == True).all()
     for track in tracks:
+        lesson_count = len(track.lessons)
         tp = UserTrackProgress(
             user_id=user_id,
             track_id=track.id,
@@ -130,8 +134,8 @@ def seed_test_user(db):
             started_at=datetime.datetime.now() - datetime.timedelta(days=30),
             completed_at=datetime.datetime.now(),
             is_repeating=False,
-            total_xp=track.lessons.count() * 50,
-            current_lesson_index=track.lessons.count() - 1
+            total_xp=lesson_count * 50,
+            current_lesson_index=lesson_count - 1
         )
         db.add(tp)
         db.flush()  # чтобы получить tp.id
@@ -169,7 +173,21 @@ def seed_test_user(db):
         db.add(ua)
     db.commit()
 
-    print(f"Тестовый пользователь '{test_username}' (пароль 'testpass') создан со всеми разблокировками.")
+    lb = LeaderboardService(db)
+    # Имитируем накопленный XP по периодам
+    lb.update_entry(user.id, 'xp_total', 1500)
+    lb.update_entry(user.id, 'xp_weekly', 300)
+    lb.update_entry(user.id, 'xp_daily', 50)
+    lb.update_entry(user.id, 'xp_monthly', 800)
+    lb.update_entry(user.id, 'tasks_completed', 44)
+    lb.update_entry(user.id, 'accuracy_rate', 87.5)
+    # Стрик
+    user.current_streak = 15
+    user.longest_streak = 30
+    lb.update_entry(user.id, 'current_streak', user.current_streak)
+
+    print(f"Тестовый пользователь '{test_username}' (пароль '{test_password}') создан со всеми разблокировками.")
+    db.commit()
 
 def seed_achievements(db):
     """Создаёт базовый набор достижений."""
@@ -295,6 +313,28 @@ def seed_data():
     )
     db.add(gen_calc)
     db.commit()
+
+    def seed_leaderboard_categories(db):
+        if db.query(LeaderboardCategory).count() > 0:
+            return
+        categories = [
+            ("xp_daily", "XP за день", "xp_daily", "global", "daily"),
+            ("xp_weekly", "XP за неделю", "xp_weekly", "global", "weekly"),
+            ("xp_monthly", "XP за месяц", "xp_monthly", "global", "monthly"),
+            ("xp_total", "Общий XP", "xp_total", "global", "never"),
+            ("tasks_completed", "Выполнено заданий", "tasks_completed", "global", "daily"),
+            ("accuracy_rate", "Точность решений", "accuracy_rate", "global", "daily"),
+            ("current_streak", "Текущий стрик", "current_streak", "global", "daily"),
+            # при желании можно добавить те же метрики с scope='friends'
+            ("xp_weekly_friends", "XP за неделю (друзья)", "xp_weekly", "friends", "weekly"),
+            ("tasks_completed_friends", "Заданий за день (друзья)", "tasks_completed", "friends", "daily"),
+        ]
+        for code, name, metric, scope, period in categories:
+            db.add(LeaderboardCategory(
+                code=code, name=name, metric_type=metric,
+                scope=scope, reset_period=period, is_active=True
+            ))
+        db.commit()
 
     # ======================= УРОКИ И ТЕОРИЯ =======================
     # Вспомогательная функция для создания полного урока
@@ -801,7 +841,8 @@ def seed_data():
 
     seed_shop_data(db)
     seed_achievements(db)
-    seed_test_user(db) 
+    seed_leaderboard_categories(db)
+    seed_test_user(db)
 
     print("Реальный контент успешно добавлен.")
 

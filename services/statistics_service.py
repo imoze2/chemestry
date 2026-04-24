@@ -60,3 +60,6 @@ class StatisticsService:
             UserTopicStats.total_attempts >= 3  # минимальный опыт
         ).order_by(UserTopicStats.accuracy_rate.asc()).limit(limit).all()
         return stats
+    
+    def get_all_topic_stats(self, user_id: uuid.UUID):
+        return self.db.query(UserTopicStats).filter(UserTopicStats.user_id == user_id).all()

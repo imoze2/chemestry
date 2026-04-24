@@ -338,14 +338,20 @@ class LessonWindow(QWidget):
             lb_svc = LeaderboardService(self.db)
             lb_svc.update_entry(self.user.id, 'xp_total', self.active_version.xp_reward)
             lb_svc.update_entry(self.user.id, 'xp_weekly', self.active_version.xp_reward)
+            lb_svc.update_entry(self.user.id, 'xp_daily', self.active_version.xp_reward)
+            lb_svc.update_entry(self.user.id, 'xp_monthly', self.active_version.xp_reward)
             lb_svc.update_entry(self.user.id, 'tasks_completed', completed_tasks)
-
 
             # Статистика тем (из тегов заданий)
             stats_svc = StatisticsService(self.db)
-            for lesson_task, task in self.lesson_tasks:
-                stats_svc.update_topic_stats(self.user.id, task.topic_tags, is_correct=...)
-            
+            all_stats = stats_svc.get_all_topic_stats(self.user.id)
+            if all_stats:
+                total_attempts = sum(s.total_attempts for s in all_stats)
+                correct_attempts = sum(s.correct_attempts for s in all_stats)
+                if total_attempts > 0:
+                    accuracy = correct_attempts / total_attempts * 100.0
+                    lb_svc.update_entry(self.user.id, 'accuracy_rate', accuracy)
+
             QMessageBox.information(self, "Урок завершён", f"Урок пройден! Получено {self.active_version.xp_reward} XP.")
             self.back_to_lessons()
         else:

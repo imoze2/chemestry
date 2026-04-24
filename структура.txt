@@ -738,10 +738,13 @@ from database.models.content import (
     Track, Lesson, LessonVersion, Theory, LessonTheory,
     TaskGenerator, Task, TaskVariant, LessonTask
 )
-from database.models.user import ItemType, ShopItem
-from database.models.gamification import Achievement
+from database.models.user import User, UserCurrency, UserInventory, UserShowcase, ItemType, ShopItem
+from database.models.gamification import Achievement, UserAchievement
+from database.models.progress import UserTrackProgress, UserLessonProgress
+from services.auth_service import AuthService
 from sqlalchemy import text
 import random
+import datetime
 
 def clear_content(db):
     """Удаляем все данные контента в правильном порядке, чтобы избежать FK ошибок"""
@@ -820,6 +823,87 @@ def seed_shop_data(db):
         db.add(ShopItem(item_type_id=item_type.id, price_coins=75, price_crystals=5, is_active=True))
     db.commit()
     print("Магазин заполнен.")
+
+def seed_test_user(db):
+    """Создаёт тестового пользователя со всем открытым контентом, валютой и достижениями."""
+    test_username = "testuser"
+    existing = db.query(User).filter(User.username == test_username).first()
+    if existing:
+        db.delete(existing)
+        db.commit()
+        print("Удалён старый тестовый пользователь.")
+
+    # Хешируем пароль
+    hashed_pw = AuthService.hash_password("testpass")
+    user = User(
+        username=test_username,
+        email="testuser@example.com",
+        password_hash=hashed_pw,
+        current_streak=100,
+        longest_streak=200,
+        last_active=datetime.datetime.now()
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    user_id = user.id
+
+    # Кошелёк с кучей валют
+    wallet = UserCurrency(user_id=user_id, coins=99999, crystals=9999)
+    db.add(wallet)
+    db.commit()
+
+    # Проходим все треки и все уроки
+    tracks = db.query(Track).filter(Track.is_published == True).all()
+    for track in tracks:
+        lesson_count = len(track.lessons)
+        tp = UserTrackProgress(
+            user_id=user_id,
+            track_id=track.id,
+            status='completed',
+            started_at=datetime.datetime.now() - datetime.timedelta(days=30),
+            completed_at=datetime.datetime.now(),
+            is_repeating=False,
+            total_xp=lesson_count * 50,
+            current_lesson_index=lesson_count - 1
+        )
+        db.add(tp)
+        db.flush()  # чтобы получить tp.id
+
+        for lesson in track.lessons:
+            version = lesson.versions[0] if lesson.versions else None
+            lp = UserLessonProgress(
+                user_track_progress_id=tp.id,
+                lesson_id=lesson.id,
+                version_id=version.id if version else None,
+                status='completed',
+                theory_viewed=True,
+                theory_viewed_at=datetime.datetime.now() - datetime.timedelta(days=10),
+                tasks_completed=len(lesson.task_links),
+                tasks_total=len(lesson.task_links),
+                score_earned=len(lesson.task_links),
+                score_total=len(lesson.task_links),
+                started_at=datetime.datetime.now() - datetime.timedelta(days=10),
+                completed_at=datetime.datetime.now() - datetime.timedelta(days=9),
+                is_skipped=False
+            )
+            db.add(lp)
+    db.commit()
+
+    # Все достижения
+    achievements = db.query(Achievement).all()
+    for ach in achievements:
+        ua = UserAchievement(
+            user_id=user_id,
+            achievement_id=ach.id,
+            unlocked_at=datetime.datetime.now(),
+            shown_to_user=True,
+            is_displayed=True
+        )
+        db.add(ua)
+    db.commit()
+
+    print(f"Тестовый пользователь '{test_username}' (пароль 'testpass') создан со всеми разблокировками.")
 
 def seed_achievements(db):
     """Создаёт базовый набор достижений."""
@@ -1451,6 +1535,7 @@ def seed_data():
 
     seed_shop_data(db)
     seed_achievements(db)
+    seed_test_user(db) 
 
     print("Реальный контент успешно добавлен.")
 
@@ -3361,10 +3446,13 @@ class RegisterWindow(QWidget):
 
 gui/windows/store_window.py ```
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QLabel, QPushButton, QScrollArea, QGridLayout, QMessageBox, QTabWidget, QListWidget, QListWidgetItem, QHBoxLayout
-from PyQt6.QtGui import QPixmap, QIcon
+from PyQt6.QtGui import QPixmap, QIcon, QColor
 from PyQt6.QtCore import QSize
+from PyQt6.QtCore import Qt
 from services.shop_service import ShopService
 import os
+import sys
+from basedir import resource_path
 
 class StoreWindow(QWidget):
     def __init__(self, user, db_session):
@@ -3395,7 +3483,7 @@ class StoreWindow(QWidget):
             items = self.shop_svc.get_available_items() if cat_code is None else self.shop_svc.get_items_by_category(cat_code)
             for shop_item in items:
                 item_type = shop_item.item_type
-                icon = QIcon(self.get_icon_path(item_type.icon_url))
+                icon = self.get_icon(item_type.icon_url)
                 text = f"{item_type.name}\n"
                 if shop_item.price_coins:
                     text += f"💰{shop_item.price_coins} "
@@ -3414,11 +3502,27 @@ class StoreWindow(QWidget):
         layout.addWidget(back_btn)
         self.setLayout(layout)
 
-    def get_icon_path(self, url: str) -> str:
-        # Заглушка: если файла нет, возвращаем пустой путь, виджет использует дефолтную иконку
-        if url and os.path.exists(url):
-            return url
-        return ""  # QIcon с пустым путём покажет пустоту, можно нарисовать цветной квадрат
+    def get_icon(self, url: str) -> QIcon:
+        """Создаёт QIcon с отладочной проверкой и заглушкой при ошибке."""
+        if not url:
+            # Заглушка – серый квадрат
+            pix = QPixmap(64, 64)
+            pix.fill(QColor(100, 100, 100))
+            return QIcon(pix)
+
+        abs_path = resource_path(url)
+        if not os.path.exists(abs_path):
+            print(f"DEBUG: Файл не найден: {abs_path}")
+            pix = QPixmap(64, 64)
+            pix.fill(QColor(200, 0, 0))  # красный квадрат для отсутствующей иконки
+            return QIcon(pix)
+
+        pix = QPixmap(abs_path)
+        if pix.isNull():
+            print(f"DEBUG: QPixmap не загрузился: {abs_path}")
+            pix = QPixmap(64, 64)
+            pix.fill(QColor(200, 200, 0))  # жёлтый – ошибка чтения
+        return QIcon(pix)
 
     def buy_item(self, item):
         shop_item_id = item.data(1)
@@ -4863,7 +4967,7 @@ from gui.windows.login_window import LoginWindow
 
 def main():
     init_db()
-    # seed_data()
+    seed_data()
     
     app = QApplication(sys.argv)
     db_session = SessionLocal()

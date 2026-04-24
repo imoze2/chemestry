@@ -11,9 +11,12 @@ from PyQt6.QtWidgets import (
 
 from PyQt6.QtCore import Qt
 
+from datetime import date, timedelta
+
 from gui.windows.register_window import RegisterWindow
 from gui.windows.main_window import MainMenuWindow
 from services.auth_service import AuthService
+from services.leaderboard_service import LeaderboardService
 
 class LoginWindow(QWidget):
 
@@ -72,6 +75,27 @@ class LoginWindow(QWidget):
         success, result = AuthService.login(username, password)
 
         if success:
+            user = result
+            today = date.today()
+            if user.last_login_date:
+                diff = (today - user.last_login_date).days
+                if diff == 0:
+                    pass  # уже заходил сегодня
+                elif diff == 1:
+                    user.current_streak += 1
+                    user.longest_streak = max(user.longest_streak, user.current_streak)
+                else:
+                    user.current_streak = 1
+            else:
+                user.current_streak = 1
+            user.last_login_date = today
+            self.db_session.commit()
+
+            lb_service = LeaderboardService(self.db_session)
+            lb_service.ensure_user_entries(result.id)
+            if result.current_streak:
+                lb_service.update_entry(result.id, 'current_streak', result.current_streak)
+            
             self.close()
             self.main_window = MainMenuWindow(result, self.db_session)
             self.main_window.show()

@@ -42,8 +42,10 @@ class StoreWindow(QWidget):
                     text += f"💰{shop_item.price_coins} "
                 if shop_item.price_crystals:
                     text += f"💎{shop_item.price_crystals}"
-                list_item = QListWidgetItem(icon, text)
+                list_item = QListWidgetItem()
                 list_item.setData(1, shop_item.id)
+                list_item.setText(text)
+                list_item.setIcon(icon)
                 widget.addItem(list_item)
             widget.itemDoubleClicked.connect(self.buy_item)
             tabs.addTab(widget, cat_name)
@@ -71,10 +73,12 @@ class StoreWindow(QWidget):
             return QIcon(pix)
 
         pix = QPixmap(abs_path)
+        pix = pix.scaled(64, 64, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
         if pix.isNull():
             print(f"DEBUG: QPixmap не загрузился: {abs_path}")
             pix = QPixmap(64, 64)
             pix.fill(QColor(200, 200, 0))  # жёлтый – ошибка чтения
+
         return QIcon(pix)
 
     def buy_item(self, item):

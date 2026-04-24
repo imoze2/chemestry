@@ -51,15 +51,11 @@ class MainMenuWindow(QWidget):
         leaderboard_button = QPushButton("Доска почёта")
         leaderboard_button.clicked.connect(self.open_leaderboard)
 
-        settings_button = QPushButton("Настройки")
-        settings_button.clicked.connect(self.open_settings)
-
         exit_button = QPushButton("Выход")
         exit_button.clicked.connect(self.logout)
 
         menu_layout.addWidget(learn_button)
         menu_layout.addWidget(leaderboard_button)
-        menu_layout.addWidget(settings_button)
         menu_layout.addWidget(exit_button)
 
         main_layout.addLayout(top_layout)
@@ -87,10 +83,10 @@ class MainMenuWindow(QWidget):
         self.close()
 
     def open_leaderboard(self):
-        print("Открыть доску почёта")
-
-    def open_settings(self):
-        print("Открыть настройки")
+        from gui.windows.leaderboard_window import LeaderboardWindow
+        self.leaderboard_window = LeaderboardWindow(self.user, self.db_session)
+        self.leaderboard_window.show()
+        self.close()
 
     def logout(self):
         from gui.windows.login_window import LoginWindow
