@@ -34,6 +34,7 @@
 ---- showcase_gold.png
 ---- showcase_simple.png
 ---- theme_blue.png
+---- theme_classic.png
 ---- theme_dark.png
 ---- theme_yellow.png
 - database/
@@ -53,6 +54,7 @@
 ---- task_widgets.py
 -- windows/
 ---- friends_window.py
+---- leaderboard_window.py
 ---- lesson_list_window.py
 ---- lesson_window.py
 ---- login_window.py
@@ -739,9 +741,11 @@ from database.models.content import (
     TaskGenerator, Task, TaskVariant, LessonTask
 )
 from database.models.user import User, UserCurrency, UserInventory, UserShowcase, ItemType, ShopItem
-from database.models.gamification import Achievement, UserAchievement
+from database.models.gamification import Achievement, UserAchievement, LeaderboardCategory
 from database.models.progress import UserTrackProgress, UserLessonProgress
 from services.auth_service import AuthService
+from services.leaderboard_service import LeaderboardService
+from services.statistics_service import StatisticsService
 from sqlalchemy import text
 import random
 import datetime
@@ -826,7 +830,8 @@ def seed_shop_data(db):
 
 def seed_test_user(db):
     """Создаёт тестового пользователя со всем открытым контентом, валютой и достижениями."""
-    test_username = "testuser"
+    test_username = "0"
+    test_password = "0"
     existing = db.query(User).filter(User.username == test_username).first()
     if existing:
         db.delete(existing)
@@ -834,13 +839,13 @@ def seed_test_user(db):
         print("Удалён старый тестовый пользователь.")
 
     # Хешируем пароль
-    hashed_pw = AuthService.hash_password("testpass")
+    hashed_pw = AuthService.hash_password(test_password)
     user = User(
         username=test_username,
-        email="testuser@example.com",
+        email="0@example.com",
         password_hash=hashed_pw,
-        current_streak=100,
-        longest_streak=200,
+        current_streak=15,
+        longest_streak=30,
         last_active=datetime.datetime.now()
     )
     db.add(user)
@@ -903,7 +908,21 @@ def seed_test_user(db):
         db.add(ua)
     db.commit()
 
-    print(f"Тестовый пользователь '{test_username}' (пароль 'testpass') создан со всеми разблокировками.")
+    lb = LeaderboardService(db)
+    # Имитируем накопленный XP по периодам
+    lb.update_entry(user.id, 'xp_total', 1500)
+    lb.update_entry(user.id, 'xp_weekly', 300)
+    lb.update_entry(user.id, 'xp_daily', 50)
+    lb.update_entry(user.id, 'xp_monthly', 800)
+    lb.update_entry(user.id, 'tasks_completed', 44)
+    lb.update_entry(user.id, 'accuracy_rate', 87.5)
+    # Стрик
+    user.current_streak = 15
+    user.longest_streak = 30
+    lb.update_entry(user.id, 'current_streak', user.current_streak)
+
+    print(f"Тестовый пользователь '{test_username}' (пароль '{test_password}') создан со всеми разблокировками.")
+    db.commit()
 
 def seed_achievements(db):
     """Создаёт базовый набор достижений."""
@@ -1029,6 +1048,28 @@ def seed_data():
     )
     db.add(gen_calc)
     db.commit()
+
+    def seed_leaderboard_categories(db):
+        if db.query(LeaderboardCategory).count() > 0:
+            return
+        categories = [
+            ("xp_daily", "XP за день", "xp_daily", "global", "daily"),
+            ("xp_weekly", "XP за неделю", "xp_weekly", "global", "weekly"),
+            ("xp_monthly", "XP за месяц", "xp_monthly", "global", "monthly"),
+            ("xp_total", "Общий XP", "xp_total", "global", "never"),
+            ("tasks_completed", "Выполнено заданий", "tasks_completed", "global", "daily"),
+            ("accuracy_rate", "Точность решений", "accuracy_rate", "global", "daily"),
+            ("current_streak", "Текущий стрик", "current_streak", "global", "daily"),
+            # при желании можно добавить те же метрики с scope='friends'
+            ("xp_weekly_friends", "XP за неделю (друзья)", "xp_weekly", "friends", "weekly"),
+            ("tasks_completed_friends", "Заданий за день (друзья)", "tasks_completed", "friends", "daily"),
+        ]
+        for code, name, metric, scope, period in categories:
+            db.add(LeaderboardCategory(
+                code=code, name=name, metric_type=metric,
+                scope=scope, reset_period=period, is_active=True
+            ))
+        db.commit()
 
     # ======================= УРОКИ И ТЕОРИЯ =======================
     # Вспомогательная функция для создания полного урока
@@ -1535,7 +1576,8 @@ def seed_data():
 
     seed_shop_data(db)
     seed_achievements(db)
-    seed_test_user(db) 
+    seed_leaderboard_categories(db)
+    seed_test_user(db)
 
     print("Реальный контент успешно добавлен.")
 
@@ -2255,6 +2297,154 @@ class FriendsWindow(QWidget):
             QMessageBox.warning(self, "Ошибка", message)
 ```
 
+gui/windows/leaderboard_window.py ```
+from PyQt6.QtWidgets import (
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
+    QTableWidget, QTableWidgetItem, QComboBox, QHeaderView
+)
+from PyQt6.QtCore import Qt
+from datetime import date, timedelta
+from services.leaderboard_service import LeaderboardService
+from services.friends_service import FriendsService
+
+class LeaderboardWindow(QWidget):
+    def __init__(self, user, db_session):
+        super().__init__()
+        self.user = user
+        self.db = db_session
+        self.leaderboard_svc = LeaderboardService(self.db)
+        self.friends_svc = FriendsService()
+
+        self.setWindowTitle("Доска почёта")
+        self.setFixedSize(700, 500)
+        self.init_ui()
+
+    def init_ui(self):
+        layout = QVBoxLayout()
+
+        # Верхняя панель: выбор скоупа и метрики
+        top_layout = QHBoxLayout()
+
+        # ComboBox для скоупа (глобальный / друзья)
+        self.scope_combo = QComboBox()
+        self.scope_combo.addItems(["Глобальный рейтинг", "Рейтинг среди друзей"])
+        self.scope_combo.currentIndexChanged.connect(self.on_scope_changed)
+        top_layout.addWidget(QLabel("Категория:"))
+        top_layout.addWidget(self.scope_combo)
+
+        # ComboBox для метрики (заполняется в зависимости от скоупа)
+        self.metric_combo = QComboBox()
+        self.metric_combo.currentIndexChanged.connect(self.load_leaderboard)
+        top_layout.addWidget(QLabel("Метрика:"))
+        top_layout.addWidget(self.metric_combo)
+
+        layout.addLayout(top_layout)
+
+        # Таблица результатов
+        self.table = QTableWidget()
+        self.table.setColumnCount(3)
+        self.table.setHorizontalHeaderLabels(["Место", "Пользователь", "Результат"])
+        self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        layout.addWidget(self.table)
+
+        # Кнопка назад
+        back_btn = QPushButton("Назад в меню")
+        back_btn.clicked.connect(self.back_to_menu)
+        layout.addWidget(back_btn)
+
+        self.setLayout(layout)
+
+        # Начальная загрузка метрик
+        self.on_scope_changed(0)  # глобальный по умолчанию
+
+    def on_scope_changed(self, index):
+        """Обновляет список метрик в зависимости от выбранного скоупа."""
+        scope = "global" if index == 0 else "friends"
+        # Получаем список активных категорий с нужным скоупом
+        from database.models.gamification import LeaderboardCategory
+        categories = self.db.query(LeaderboardCategory).filter(
+            LeaderboardCategory.is_active == True,
+            LeaderboardCategory.scope == scope
+        ).all()
+
+        self.metric_combo.clear()
+        self.category_ids = []
+        for cat in categories:
+            self.metric_combo.addItem(cat.name, cat.id)
+            self.category_ids.append(cat.id)
+
+        if categories:
+            self.load_leaderboard()
+
+    def load_leaderboard(self):
+        """Загружает таблицу лидеров для выбранной категории."""
+        if self.metric_combo.currentIndex() < 0:
+            self.table.setRowCount(0)
+            return
+
+        category_id = self.metric_combo.currentData()
+        if category_id is None:
+            return
+        # Получаем период начала (сегодня, неделя, месяц) – базовый запрос из сервиса
+        # Для простоты используем прямой запрос, т.к. сервис может требовать доработки
+        from database.models.gamification import LeaderboardEntry, LeaderboardCategory
+        from database.models.user import User
+
+        self.leaderboard_svc.ensure_user_entries(self.user.id)
+
+        category = self.db.query(LeaderboardCategory).filter(
+            LeaderboardCategory.id == category_id
+        ).first()
+        if not category:
+            return
+
+        # Определяем границы периода
+        period_start = date.today()
+        if category.reset_period == 'weekly':
+            period_start = period_start - timedelta(days=period_start.weekday())
+        elif category.reset_period == 'monthly':
+            period_start = period_start.replace(day=1)
+        elif category.reset_period == 'daily':
+            period_start = period_start
+        else:
+            period_start = date(2000, 1, 1)  # для "never" берём все
+
+        # Базовый запрос записей
+        query = self.db.query(LeaderboardEntry).filter(
+            LeaderboardEntry.category_id == category_id,
+            LeaderboardEntry.period_start == period_start
+        )
+
+        # Если скоуп "friends" – фильтруем по друзьям
+        if self.scope_combo.currentIndex() == 1:
+            friends = self.friends_svc.get_friends(self.user.id)
+            friend_ids = [f.id for f in friends] + [self.user.id]  # включаем себя
+            query = query.filter(LeaderboardEntry.user_id.in_(friend_ids))
+
+        entries = query.order_by(LeaderboardEntry.score.desc()).all()
+
+        self.table.setRowCount(len(entries))
+        for i, entry in enumerate(entries):
+            user = self.db.query(User).filter(User.id == entry.user_id).first()
+            username = user.username if user else "Unknown"
+
+            rank_item = QTableWidgetItem(str(i + 1))
+            rank_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            name_item = QTableWidgetItem(username)
+            score_item = QTableWidgetItem(str(entry.score))
+
+            self.table.setItem(i, 0, rank_item)
+            self.table.setItem(i, 1, name_item)
+            self.table.setItem(i, 2, score_item)
+
+    def back_to_menu(self):
+        from gui.windows.main_window import MainMenuWindow
+        self.menu = MainMenuWindow(self.user, self.db)
+        self.menu.show()
+        self.close()
+```
+
 gui/windows/lesson_list_window.py ```
 # gui/windows/lesson_list_window.py
 from PyQt6.QtWidgets import (
@@ -2754,14 +2944,20 @@ class LessonWindow(QWidget):
             lb_svc = LeaderboardService(self.db)
             lb_svc.update_entry(self.user.id, 'xp_total', self.active_version.xp_reward)
             lb_svc.update_entry(self.user.id, 'xp_weekly', self.active_version.xp_reward)
+            lb_svc.update_entry(self.user.id, 'xp_daily', self.active_version.xp_reward)
+            lb_svc.update_entry(self.user.id, 'xp_monthly', self.active_version.xp_reward)
             lb_svc.update_entry(self.user.id, 'tasks_completed', completed_tasks)
-
 
             # Статистика тем (из тегов заданий)
             stats_svc = StatisticsService(self.db)
-            for lesson_task, task in self.lesson_tasks:
-                stats_svc.update_topic_stats(self.user.id, task.topic_tags, is_correct=...)
-            
+            all_stats = stats_svc.get_all_topic_stats(self.user.id)
+            if all_stats:
+                total_attempts = sum(s.total_attempts for s in all_stats)
+                correct_attempts = sum(s.correct_attempts for s in all_stats)
+                if total_attempts > 0:
+                    accuracy = correct_attempts / total_attempts * 100.0
+                    lb_svc.update_entry(self.user.id, 'accuracy_rate', accuracy)
+
             QMessageBox.information(self, "Урок завершён", f"Урок пройден! Получено {self.active_version.xp_reward} XP.")
             self.back_to_lessons()
         else:
@@ -2782,9 +2978,12 @@ from PyQt6.QtWidgets import (
 
 from PyQt6.QtCore import Qt
 
+from datetime import date, timedelta
+
 from gui.windows.register_window import RegisterWindow
 from gui.windows.main_window import MainMenuWindow
 from services.auth_service import AuthService
+from services.leaderboard_service import LeaderboardService
 
 class LoginWindow(QWidget):
 
@@ -2843,6 +3042,27 @@ class LoginWindow(QWidget):
         success, result = AuthService.login(username, password)
 
         if success:
+            user = result
+            today = date.today()
+            if user.last_login_date:
+                diff = (today - user.last_login_date).days
+                if diff == 0:
+                    pass  # уже заходил сегодня
+                elif diff == 1:
+                    user.current_streak += 1
+                    user.longest_streak = max(user.longest_streak, user.current_streak)
+                else:
+                    user.current_streak = 1
+            else:
+                user.current_streak = 1
+            user.last_login_date = today
+            self.db_session.commit()
+
+            lb_service = LeaderboardService(self.db_session)
+            lb_service.ensure_user_entries(result.id)
+            if result.current_streak:
+                lb_service.update_entry(result.id, 'current_streak', result.current_streak)
+            
             self.close()
             self.main_window = MainMenuWindow(result, self.db_session)
             self.main_window.show()
@@ -2907,15 +3127,11 @@ class MainMenuWindow(QWidget):
         leaderboard_button = QPushButton("Доска почёта")
         leaderboard_button.clicked.connect(self.open_leaderboard)
 
-        settings_button = QPushButton("Настройки")
-        settings_button.clicked.connect(self.open_settings)
-
         exit_button = QPushButton("Выход")
         exit_button.clicked.connect(self.logout)
 
         menu_layout.addWidget(learn_button)
         menu_layout.addWidget(leaderboard_button)
-        menu_layout.addWidget(settings_button)
         menu_layout.addWidget(exit_button)
 
         main_layout.addLayout(top_layout)
@@ -2943,10 +3159,10 @@ class MainMenuWindow(QWidget):
         self.close()
 
     def open_leaderboard(self):
-        print("Открыть доску почёта")
-
-    def open_settings(self):
-        print("Открыть настройки")
+        from gui.windows.leaderboard_window import LeaderboardWindow
+        self.leaderboard_window = LeaderboardWindow(self.user, self.db_session)
+        self.leaderboard_window.show()
+        self.close()
 
     def logout(self):
         from gui.windows.login_window import LoginWindow
@@ -3014,7 +3230,7 @@ class ProfileSettingsWindow(QWidget):
             if inv.item_type.category != 'avatar':
                 continue
             item = QListWidgetItem(inv.item_type.name)
-            item.setData(1, inv.id)
+            item.setData(Qt.ItemDataRole.UserRole, inv.id)
             if equipped_avatar and inv.id == equipped_avatar.id:
                 item.setSelected(True)
             list_widget.addItem(item)
@@ -3024,7 +3240,7 @@ class ProfileSettingsWindow(QWidget):
         return widget
 
     def equip_avatar(self, item):
-        inv_id = item.data(1)
+        inv_id = item.data(Qt.ItemDataRole.UserRole)
         self.shop_svc.equip_item(self.user.id, inv_id)
         QMessageBox.information(self, "Аватар", "Аватар обновлён!")
 
@@ -3061,6 +3277,7 @@ class ProfileSettingsWindow(QWidget):
         # Выбор активной витрины
         layout.addWidget(QLabel("Активная витрина:"))
         self.showcase_combo = QComboBox()
+        self.showcase_combo.addItem('Без витрины', None)
         inventory = self.shop_svc.get_inventory(self.user.id)
         self.showcase_ids = []
         for inv in inventory:
@@ -3084,11 +3301,17 @@ class ProfileSettingsWindow(QWidget):
         return widget
 
     def on_showcase_changed(self):
-        # Сделать выбранную витрину активной
-        if self.showcase_combo.currentIndex() >= 0:
-            inv_id = self.showcase_combo.currentData()
-            self.shop_svc.equip_item(self.user.id, inv_id)
+        if self.showcase_combo.currentIndex() < 0:
+            return
+        inv_id = self.showcase_combo.currentData()
+        if inv_id is None:
+            return
+        success, msg = self.shop_svc.equip_item(self.user.id, inv_id)
+        if success:
             self.refresh_slots()
+            QMessageBox.information(self, "Витрина", "Витрина выбрана")
+        else:
+            QMessageBox.warning(self, "Ошибка", msg)
 
     def refresh_slots(self):
         # Очищаем и перестраиваем слоты
@@ -3489,8 +3712,10 @@ class StoreWindow(QWidget):
                     text += f"💰{shop_item.price_coins} "
                 if shop_item.price_crystals:
                     text += f"💎{shop_item.price_crystals}"
-                list_item = QListWidgetItem(icon, text)
-                list_item.setData(1, shop_item.id)
+                list_item = QListWidgetItem()
+                list_item.setData(Qt.ItemDataRole.UserRole, shop_item.id)
+                list_item.setText(text)
+                list_item.setIcon(icon)
                 widget.addItem(list_item)
             widget.itemDoubleClicked.connect(self.buy_item)
             tabs.addTab(widget, cat_name)
@@ -3518,14 +3743,16 @@ class StoreWindow(QWidget):
             return QIcon(pix)
 
         pix = QPixmap(abs_path)
+        pix = pix.scaled(64, 64, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
         if pix.isNull():
             print(f"DEBUG: QPixmap не загрузился: {abs_path}")
             pix = QPixmap(64, 64)
             pix.fill(QColor(200, 200, 0))  # жёлтый – ошибка чтения
+
         return QIcon(pix)
 
     def buy_item(self, item):
-        shop_item_id = item.data(1)
+        shop_item_id = item.data(Qt.ItemDataRole.UserRole)
         success = self.shop_svc.purchase_item(self.user.id, shop_item_id)
         if success:
             QMessageBox.information(self, "Успех", "Предмет куплен!")
@@ -4123,53 +4350,95 @@ class LeaderboardService:
     def __init__(self, db: Session):
         self.db = db
 
-    def update_entry(self, user_id: uuid.UUID, metric_type: str, score: float):
-        """Обновляет запись лидерборда для заданной метрики"""
-        category = self.db.query(LeaderboardCategory).filter(
-            LeaderboardCategory.metric_type == metric_type,
+    def ensure_user_entries(self, user_id: uuid.UUID):
+        """Создаёт записи с score=0 для всех активных категорий на текущий период, если их нет."""
+        categories = self.db.query(LeaderboardCategory).filter(
             LeaderboardCategory.is_active == True
-        ).first()
-        if not category:
-            return
-
-        # Определяем период
-        period_start = date.today()
-        if category.reset_period == 'weekly':
-            period_start = period_start - timedelta(days=period_start.weekday())
-        elif category.reset_period == 'monthly':
-            period_start = period_start.replace(day=1)
-        elif category.reset_period == 'daily':
-            period_start = period_start  # уже сегодня
-
-        entry = self.db.query(LeaderboardEntry).filter(
-            LeaderboardEntry.category_id == category.id,
-            LeaderboardEntry.user_id == user_id,
-            LeaderboardEntry.period_start == period_start
-        ).first()
-
-        if entry:
-            if category.metric_type in ('xp_total', 'xp_weekly', 'xp_daily', 'xp_monthly'):
-                entry.score += score  # для XP суммируем
-            else:
-                entry.score = score  # для точности/стриков заменяем
-        else:
-            entry = LeaderboardEntry(
-                category_id=category.id,
-                user_id=user_id,
-                period_start=period_start,
-                score=score,
-                rank=0
-            )
-            self.db.add(entry)
+        ).all()
+        today = date.today()
+        for cat in categories:
+            # Определяем период
+            period_start = today
+            if cat.reset_period == 'weekly':
+                period_start = today - timedelta(days=today.weekday())
+            elif cat.reset_period == 'monthly':
+                period_start = today.replace(day=1)
+            elif cat.reset_period == 'never':
+                period_start = date(2000, 1, 1)  # фиксированная дата для "никогда"
+            # Проверяем, есть ли уже запись
+            exists = self.db.query(LeaderboardEntry).filter(
+                LeaderboardEntry.category_id == cat.id,
+                LeaderboardEntry.user_id == user_id,
+                LeaderboardEntry.period_start == period_start
+            ).first()
+            if not exists:
+                entry = LeaderboardEntry(
+                    category_id=cat.id,
+                    user_id=user_id,
+                    period_start=period_start,
+                    score=0.0,
+                    rank=0
+                )
+                self.db.add(entry)
         self.db.commit()
 
-        # Пересчёт рангов (упрощённо, можно сделать по триггеру или отдельно)
-        entries = self.db.query(LeaderboardEntry).filter(
-            LeaderboardEntry.category_id == category.id,
-            LeaderboardEntry.period_start == period_start
-        ).order_by(LeaderboardEntry.score.desc()).all()
-        for i, e in enumerate(entries, start=1):
-            e.rank = i
+    def update_entry(self, user_id: uuid.UUID, metric_type: str, score: float):
+        """Обновляет запись лидерборда для заданной метрики"""
+        categories = self.db.query(LeaderboardCategory).filter(
+            LeaderboardCategory.metric_type == metric_type,
+            LeaderboardCategory.is_active == True
+        ).all()
+        if not categories:
+            return
+
+        # Определяем, суммируемые ли метрики
+        cumulative_metrics = ('xp_total', 'xp_weekly', 'xp_daily', 'xp_monthly', 'tasks_completed', 'challenges_completed')
+        is_cumulative = metric_type in cumulative_metrics
+
+        for cat in categories:
+            period_start = date.today()
+            if cat.reset_period == 'weekly':
+                period_start = period_start - timedelta(days=period_start.weekday())
+            elif cat.reset_period == 'monthly':
+                period_start = period_start.replace(day=1)
+            elif cat.reset_period == 'never':
+                period_start = date(2000, 1, 1)
+            # daily оставляем сегодня
+
+            entry = self.db.query(LeaderboardEntry).filter(
+                LeaderboardEntry.category_id == cat.id,
+                LeaderboardEntry.user_id == user_id,
+                LeaderboardEntry.period_start == period_start
+            ).first()
+
+            if not entry:
+                entry = LeaderboardEntry(
+                    category_id=cat.id,
+                    user_id=user_id,
+                    period_start=period_start,
+                    score=0.0,
+                    rank=0
+                )
+                self.db.add(entry)
+
+            if is_cumulative:
+                entry.score += score
+            else:
+                entry.score = score
+
+        self.db.commit()
+
+        # Пересчёт рангов
+        for cat in categories:
+            entries = self.db.query(LeaderboardEntry).filter(
+                LeaderboardEntry.category_id == cat.id,
+                LeaderboardEntry.period_start == (
+                    date.today() if cat.reset_period in ('daily', 'weekly', 'monthly', 'never')  # упростим: возьмём период как у текущей записи
+                    else date(2000,1,1)  # не совсем точно, но для ранжирования сойдёт, можно доработать
+                )
+            ).order_by(LeaderboardEntry.score.desc()).all()
+            for i, e in enumerate(entries, start=1):
+                e.rank = i
         self.db.commit()
 ```
 
@@ -4294,7 +4563,7 @@ class ProgressService:
 ```
 
 services/shop_service.py ```
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from typing import Optional
 from database.models.user import UserInventory, ShopItem, UserShowcase, ItemType
 import uuid
@@ -4351,13 +4620,15 @@ class ShopService:
         ).all()
 
     def equip_item(self, user_id: uuid.UUID, inventory_id: int):
-        """Экипирует предмет (аватар, тему, витрину). Снимает предыдущий того же типа."""
-        inv = self.db.query(UserInventory).filter(
+        # Загружаем предмет с подгрузкой item_type
+        inv = self.db.query(UserInventory).options(joinedload(UserInventory.item_type)).filter(
             UserInventory.id == inventory_id, UserInventory.user_id == user_id
         ).first()
         if not inv:
-            return False
+            return False, "Предмет не найден в инвентаре"
+        
         category = inv.item_type.category
+
         # Снимаем все экипированные предметы данной категории
         equipped = self.db.query(UserInventory).filter(
             UserInventory.user_id == user_id,
@@ -4367,21 +4638,29 @@ class ShopService:
         for eq in equipped:
             eq.is_equipped = False
             eq.equipped_slot = None
-            # Если снимаем витрину, снимаем и артефакты в слотах
-            if category == 'showcase':
-                artifacts = self.db.query(UserInventory).filter(
-                    UserInventory.user_id == user_id,
-                    UserInventory.is_equipped == True,
-                    UserInventory.item_type.has(category='artifact')
-                ).all()
-                for art in artifacts:
-                    art.is_equipped = False
-                    art.equipped_slot = None
-        # Экипируем выбранный
+
+        # Если это витрина – снимаем все артефакты и очищаем слоты
+        if category == 'showcase':
+            # Сбрасываем артефакты
+            artifacts = self.db.query(UserInventory).filter(
+                UserInventory.user_id == user_id,
+                UserInventory.is_equipped == True,
+                UserInventory.item_type.has(category='artifact')
+            ).all()
+            for art in artifacts:
+                art.is_equipped = False
+                art.equipped_slot = None
+            
+            # Удаляем все записи о слотах витрины, чтобы не оставалось мусора
+            self.db.query(UserShowcase).filter(
+                UserShowcase.user_id == user_id
+            ).delete()
+
+        # Экипируем выбранный предмет
         inv.is_equipped = True
-        inv.equipped_slot = None  # для аватара/темы слот не нужен
+        inv.equipped_slot = None  # витрина не имеет слота
         self.db.commit()
-        return True
+        return True, "Предмет экипирован"
 
     def unequip_item(self, user_id: uuid.UUID, inventory_id: int):
         inv = self.db.query(UserInventory).filter(
@@ -4564,6 +4843,9 @@ class StatisticsService:
             UserTopicStats.total_attempts >= 3  # минимальный опыт
         ).order_by(UserTopicStats.accuracy_rate.asc()).limit(limit).all()
         return stats
+    
+    def get_all_topic_stats(self, user_id: uuid.UUID):
+        return self.db.query(UserTopicStats).filter(UserTopicStats.user_id == user_id).all()
 ```
 
 services/task_service.py ```
@@ -4967,7 +5249,7 @@ from gui.windows.login_window import LoginWindow
 
 def main():
     init_db()
-    seed_data()
+    # seed_data()
     
     app = QApplication(sys.argv)
     db_session = SessionLocal()

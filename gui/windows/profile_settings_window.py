@@ -49,14 +49,13 @@ class ProfileSettingsWindow(QWidget):
         layout = QVBoxLayout()
         layout.addWidget(QLabel("Выберите аватар из вашего инвентаря:"))
         list_widget = QListWidget()
-        # Получаем все аватары в инвентаре
         inventory = self.shop_svc.get_inventory(self.user.id)
         equipped_avatar = self.shop_svc.get_equipped_avatar(self.user.id)
         for inv in inventory:
             if inv.item_type.category != 'avatar':
                 continue
             item = QListWidgetItem(inv.item_type.name)
-            item.setData(1, inv.id)
+            item.setData(Qt.ItemDataRole.UserRole, inv.id)
             if equipped_avatar and inv.id == equipped_avatar.id:
                 item.setSelected(True)
             list_widget.addItem(item)
@@ -66,7 +65,7 @@ class ProfileSettingsWindow(QWidget):
         return widget
 
     def equip_avatar(self, item):
-        inv_id = item.data(1)
+        inv_id = item.data(Qt.ItemDataRole.UserRole)
         self.shop_svc.equip_item(self.user.id, inv_id)
         QMessageBox.information(self, "Аватар", "Аватар обновлён!")
 
@@ -103,6 +102,7 @@ class ProfileSettingsWindow(QWidget):
         # Выбор активной витрины
         layout.addWidget(QLabel("Активная витрина:"))
         self.showcase_combo = QComboBox()
+        self.showcase_combo.addItem('Без витрины', None)
         inventory = self.shop_svc.get_inventory(self.user.id)
         self.showcase_ids = []
         for inv in inventory:
@@ -111,14 +111,20 @@ class ProfileSettingsWindow(QWidget):
                 self.showcase_ids.append(inv.id)
         active = self.shop_svc.get_active_showcase(self.user.id)
         if active:
-            idx = self.showcase_ids.index(active.id) if active.id in self.showcase_ids else 0
+            # ИСПРАВЛЕНО: учитываем первый пункт "Без витрины"
+            if active.id in self.showcase_ids:
+                idx = self.showcase_ids.index(active.id) + 1
+            else:
+                idx = 0
             self.showcase_combo.setCurrentIndex(idx)
+        else:
+            self.showcase_combo.setCurrentIndex(0)
         self.showcase_combo.currentIndexChanged.connect(self.on_showcase_changed)
         layout.addWidget(self.showcase_combo)
 
         # Слоты витрины
         layout.addWidget(QLabel("Заполнение слотов:"))
-        self.slots_layout = QVBoxLayout()  # будет перестраиваться
+        self.slots_layout = QVBoxLayout()
         layout.addLayout(self.slots_layout)
         self.refresh_slots()
 
@@ -126,41 +132,71 @@ class ProfileSettingsWindow(QWidget):
         return widget
 
     def on_showcase_changed(self):
-        # Сделать выбранную витрину активной
-        if self.showcase_combo.currentIndex() >= 0:
-            inv_id = self.showcase_combo.currentData()
-            self.shop_svc.equip_item(self.user.id, inv_id)
+        if self.showcase_combo.currentIndex() < 0:
+            return
+        inv_id = self.showcase_combo.currentData()
+        if inv_id is None:
+            self.shop_svc.unequip_showcase(self.user.id)
             self.refresh_slots()
+            QMessageBox.information(self, "Витрина", "Витрина снята")
+            return
+        success, msg = self.shop_svc.equip_item(self.user.id, inv_id)
+        if success:
+            self.refresh_slots()
+            QMessageBox.information(self, "Витрина", "Витрина выбрана")
+        else:
+            QMessageBox.warning(self, "Ошибка", msg)
 
     def refresh_slots(self):
-        # Очищаем и перестраиваем слоты
+        # Очищаем текущие виджеты слотов
         while self.slots_layout.count():
             child = self.slots_layout.takeAt(0)
             if child.widget():
                 child.widget().deleteLater()
+
         active = self.shop_svc.get_active_showcase(self.user.id)
         if not active:
             self.slots_layout.addWidget(QLabel("Нет активной витрины"))
             return
+
         capacity = active.item_type.capacity
         slots = self.shop_svc.get_showcase_slots(self.user.id)
-        # Получаем список доступных артефактов (не экипированных)
         inventory = self.shop_svc.get_inventory(self.user.id)
-        available_artifacts = [inv for inv in inventory if inv.item_type.category == 'artifact' and not inv.is_equipped]
-        for slot_num in range(1, capacity+1):
+
+        for slot_num in range(1, capacity + 1):
+            # ИСПРАВЛЕНО: строим список артефактов для этого слота
+            # включаем артефакт, который сейчас стоит в этом слоте (даже если equipped=True),
+            # но исключаем артефакты, уже занятые в ДРУГИХ слотах
+            current_artifact = slots.get(slot_num)
+            current_art_id = current_artifact.id if current_artifact else None
+            artifacts_for_slot = []
+            for inv in inventory:
+                if inv.item_type.category != 'artifact':
+                    continue
+                # Если это текущий артефакт слота — включаем всегда
+                if inv.id == current_art_id:
+                    artifacts_for_slot.append(inv)
+                # Иначе включаем только не экипированные
+                elif not inv.is_equipped:
+                    artifacts_for_slot.append(inv)
+
             slot_widget = QWidget()
             slot_layout = QHBoxLayout()
             slot_layout.addWidget(QLabel(f"Слот {slot_num}:"))
+
             combo = QComboBox()
             combo.addItem("Пусто", None)
-            current_artifact = slots.get(slot_num)
             selected_idx = 0
-            for i, art in enumerate(available_artifacts):
+            for i, art in enumerate(artifacts_for_slot):
                 combo.addItem(art.item_type.name, art.id)
-                if current_artifact and art.id == current_artifact.id:
-                    selected_idx = i+1
+                if art.id == current_art_id:
+                    selected_idx = i + 1
             combo.setCurrentIndex(selected_idx)
-            combo.currentIndexChanged.connect(lambda idx, s=slot_num, c=combo: self.place_artifact(s, c))
+
+            # Захват переменных для лямбды осуществляется через аргументы по умолчанию
+            combo.currentIndexChanged.connect(
+                lambda idx, s=slot_num, c=combo: self.place_artifact(s, c)
+            )
             slot_layout.addWidget(combo)
             slot_widget.setLayout(slot_layout)
             self.slots_layout.addWidget(slot_widget)
@@ -175,8 +211,11 @@ class ProfileSettingsWindow(QWidget):
                 QMessageBox.information(self, "Витрина", "Артефакт размещён")
                 self.refresh_slots()
         else:
-            # Пока просто обновим отображение
+            # Если выбран "Пусто" — убрать артефакт из слота (предполагаем, что метод поддерживает это)
+            self.shop_svc.remove_artifact_from_slot(self.user.id, slot)
             self.refresh_slots()
+            QMessageBox.information(self, "Витрина", "Артефакт убран")
+            return
 
     def create_achievements_tab(self):
         widget = QWidget()

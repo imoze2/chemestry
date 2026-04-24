@@ -1,4 +1,4 @@
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from typing import Optional
 from database.models.user import UserInventory, ShopItem, UserShowcase, ItemType
 import uuid
@@ -55,13 +55,15 @@ class ShopService:
         ).all()
 
     def equip_item(self, user_id: uuid.UUID, inventory_id: int):
-        """Экипирует предмет (аватар, тему, витрину). Снимает предыдущий того же типа."""
-        inv = self.db.query(UserInventory).filter(
+        # Загружаем предмет с подгрузкой item_type
+        inv = self.db.query(UserInventory).options(joinedload(UserInventory.item_type)).filter(
             UserInventory.id == inventory_id, UserInventory.user_id == user_id
         ).first()
         if not inv:
-            return False
+            return False, "Предмет не найден в инвентаре"
+        
         category = inv.item_type.category
+
         # Снимаем все экипированные предметы данной категории
         equipped = self.db.query(UserInventory).filter(
             UserInventory.user_id == user_id,
@@ -71,21 +73,44 @@ class ShopService:
         for eq in equipped:
             eq.is_equipped = False
             eq.equipped_slot = None
-            # Если снимаем витрину, снимаем и артефакты в слотах
-            if category == 'showcase':
-                artifacts = self.db.query(UserInventory).filter(
-                    UserInventory.user_id == user_id,
-                    UserInventory.is_equipped == True,
-                    UserInventory.item_type.has(category='artifact')
-                ).all()
-                for art in artifacts:
-                    art.is_equipped = False
-                    art.equipped_slot = None
-        # Экипируем выбранный
+
+        # Если это витрина – снимаем все артефакты и очищаем слоты
+        if category == 'showcase':
+            # Сбрасываем артефакты
+            artifacts = self.db.query(UserInventory).filter(
+                UserInventory.user_id == user_id,
+                UserInventory.is_equipped == True,
+                UserInventory.item_type.has(category='artifact')
+            ).all()
+            for art in artifacts:
+                art.is_equipped = False
+                art.equipped_slot = None
+            
+            # Удаляем все записи о слотах витрины, чтобы не оставалось мусора
+            self.db.query(UserShowcase).filter(
+                UserShowcase.user_id == user_id
+            ).delete()
+
+        # Экипируем выбранный предмет
         inv.is_equipped = True
-        inv.equipped_slot = None  # для аватара/темы слот не нужен
+        inv.equipped_slot = None  # витрина не имеет слота
         self.db.commit()
-        return True
+        return True, "Предмет экипирован"
+    
+    def remove_artifact_from_slot(self, user_id: uuid.UUID, slot: int):
+        """Убирает артефакт из указанного слота активной витрины."""
+        art = self.db.query(UserInventory).filter(
+            UserInventory.user_id == user_id,
+            UserInventory.is_equipped == True,
+            UserInventory.equipped_slot == slot,
+            UserInventory.item_type.has(category='artifact')
+        ).first()
+        if art:
+            art.is_equipped = False
+            art.equipped_slot = None
+            self.db.commit()
+            return True, "Артефакт удалён из слота"
+        return False, "Слот пуст"
 
     def unequip_item(self, user_id: uuid.UUID, inventory_id: int):
         inv = self.db.query(UserInventory).filter(
@@ -95,6 +120,27 @@ class ShopService:
             inv.is_equipped = False
             inv.equipped_slot = None
             self.db.commit()
+
+    def unequip_showcase(self, user_id: uuid.UUID):
+        """Снимает активную витрину и очищает все связанные слоты."""
+        showcase = self.get_active_showcase(user_id)
+        if not showcase:
+            return
+        # Снимаем все артефакты, которые были в слотах
+        artifacts = self.db.query(UserInventory).filter(
+            UserInventory.user_id == user_id,
+            UserInventory.is_equipped == True,
+            UserInventory.item_type.has(category='artifact')
+        ).all()
+        for art in artifacts:
+            art.is_equipped = False
+            art.equipped_slot = None
+        # Снимаем саму витрину
+        showcase.is_equipped = False
+        showcase.equipped_slot = None
+        # Удаляем записи слотов витрины (при их наличии)
+        self.db.query(UserShowcase).filter(UserShowcase.user_id == user_id).delete()
+        self.db.commit()
 
     def get_equipped_avatar(self, user_id: uuid.UUID) -> Optional[UserInventory]:
         return self.db.query(UserInventory).filter(

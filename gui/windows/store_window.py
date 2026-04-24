@@ -43,7 +43,7 @@ class StoreWindow(QWidget):
                 if shop_item.price_crystals:
                     text += f"💎{shop_item.price_crystals}"
                 list_item = QListWidgetItem()
-                list_item.setData(1, shop_item.id)
+                list_item.setData(Qt.ItemDataRole.UserRole, shop_item.id)
                 list_item.setText(text)
                 list_item.setIcon(icon)
                 widget.addItem(list_item)
@@ -82,7 +82,7 @@ class StoreWindow(QWidget):
         return QIcon(pix)
 
     def buy_item(self, item):
-        shop_item_id = item.data(1)
+        shop_item_id = item.data(Qt.ItemDataRole.UserRole)
         success = self.shop_svc.purchase_item(self.user.id, shop_item_id)
         if success:
             QMessageBox.information(self, "Успех", "Предмет куплен!")
