@@ -55,7 +55,7 @@ class LessonWindow(QWidget):
         title_label = QLabel(self.active_version.title)
         title_label.setStyleSheet("font-size: 18px; font-weight: bold;")
         xp_label = QLabel(f"Награда: {self.active_version.xp_reward} XP")
-        xp_label.setStyleSheet("color: #aaa;")
+        xp_label.setProperty("class", "xp-label")
         header.addWidget(title_label)
         header.addStretch()
         header.addWidget(xp_label)

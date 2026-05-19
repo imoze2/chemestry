@@ -17,6 +17,7 @@ from gui.windows.register_window import RegisterWindow
 from gui.windows.main_window import MainMenuWindow
 from services.auth_service import AuthService
 from services.leaderboard_service import LeaderboardService
+from gui.styles.theme_manager import apply_theme, get_user_theme
 
 class LoginWindow(QWidget):
 
@@ -96,6 +97,9 @@ class LoginWindow(QWidget):
             if result.current_streak:
                 lb_service.update_entry(result.id, 'current_streak', result.current_streak)
             
+            theme = get_user_theme(user.id, self.db_session)
+            apply_theme(theme)
+
             self.close()
             self.main_window = MainMenuWindow(result, self.db_session)
             self.main_window.show()

@@ -5,6 +5,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt
 from services.shop_service import ShopService
 from services.achievement_service import AchievementService
+from database.models.user import ItemType
 
 class ProfileSettingsWindow(QWidget):
     def __init__(self, user, db_session):
@@ -73,9 +74,23 @@ class ProfileSettingsWindow(QWidget):
         widget = QWidget()
         layout = QVBoxLayout()
         layout.addWidget(QLabel("Выберите тему профиля:"))
-        list_widget = QListWidget()
+
+        # 1. Гарантируем, что классическая тема есть у пользователя
+        classic_theme = self.db.query(ItemType).filter(ItemType.name == "Классическая").first()
+        if classic_theme:
+            from database.models.user import UserInventory
+            existing = self.db.query(UserInventory).filter(
+                UserInventory.user_id == self.user.id,
+                UserInventory.item_type_id == classic_theme.id
+            ).first()
+            if not existing:
+                self.shop_svc.add_item_to_inventory(self.user.id, classic_theme.id)
+
+        # 2. Получаем актуальный инвентарь и показываем список
         inventory = self.shop_svc.get_inventory(self.user.id)
         equipped_theme = self.shop_svc.get_equipped_theme(self.user.id)
+
+        list_widget = QListWidget()
         for inv in inventory:
             if inv.item_type.category != 'profile_theme':
                 continue
@@ -92,6 +107,9 @@ class ProfileSettingsWindow(QWidget):
     def equip_theme(self, item):
         inv_id = item.data(1)
         self.shop_svc.equip_item(self.user.id, inv_id)
+        from gui.styles.theme_manager import apply_theme, get_user_theme
+        theme = get_user_theme(self.user.id, self.db)
+        apply_theme(theme)
         QMessageBox.information(self, "Тема", "Тема обновлена!")
 
     def create_showcase_tab(self):

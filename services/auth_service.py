@@ -1,6 +1,7 @@
 import bcrypt
 from database.db import SessionLocal
-from database.models.user import User
+from database.models.user import User, UserInventory, ItemType
+from services.shop_service import ShopService
 
 
 class AuthService:
@@ -37,7 +38,20 @@ class AuthService:
 
         db.add(user)
         db.commit()
-
+        db.refresh(user)
+        # Выдаём классическую тему
+        classic_theme = db.query(ItemType).filter(ItemType.name == "Классическая").first()
+        if classic_theme:
+            shop = ShopService(db)  # придётся импортировать
+            shop.add_item_to_inventory(user.id, classic_theme.id)
+            # Сразу экипируем её
+            equipped = db.query(UserInventory).filter(
+                UserInventory.user_id == user.id,
+                UserInventory.item_type_id == classic_theme.id
+            ).first()
+            if equipped:
+                shop.equip_item(user.id, equipped.id)  # equip_item сам снимет другие темы
+        db.close()
         return True, "Успешная регистрация"
 
     @staticmethod

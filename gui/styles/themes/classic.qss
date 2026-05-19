@@ -1,0 +1,70 @@
+QWidget {
+    background-color: #303030;
+    color: #FFFFFF;
+    font-size: 14px;
+}
+QMainWindow {
+    background-color: #303030;
+}
+QLabel {
+    color: #FFFFFF;
+}
+QPushButton {
+    background-color: #505050;
+    border: 1px solid #AAAAAA;
+    padding: 6px 12px;
+    border-radius: 4px;
+    color: #FFFFFF;
+}
+QPushButton:hover {
+    background-color: #606060;
+}
+QLineEdit, QComboBox, QSpinBox {
+    background-color: #202020;
+    border: 1px solid #AAAAAA;
+    padding: 4px;
+    border-radius: 3px;
+    color: #FFFFFF;
+}
+QScrollArea {
+    background: transparent;
+}
+QFrame {
+    background-color: #303030;
+    border: 1px solid #AAAAAA;
+    border-radius: 5px;
+}
+QTabWidget::pane {
+    background-color: #303030;
+    border: 1px solid #AAAAAA;
+}
+QTabBar::tab {
+    background: #505050;
+    padding: 6px 12px;
+    border: 1px solid #AAAAAA;
+    border-bottom: none;
+    border-top-left-radius: 4px;
+    border-top-right-radius: 4px;
+    color: #FFFFFF;
+}
+QTabBar::tab:selected {
+    background: #303030;
+}
+QTableWidget {
+    background-color: #202020;
+    gridline-color: #AAAAAA;
+    color: #FFFFFF;
+}
+QTableWidget QHeaderView::section {
+    background-color: #505050;
+    padding: 4px;
+    border: 1px solid #AAAAAA;
+}
+QFrame.lesson-frame {
+    background-color: #303030;
+    border: 1px solid #AAAAAA;
+    border-radius: 5px;
+}
+QLabel.status-label {
+    color: #AAAAAA;
+}

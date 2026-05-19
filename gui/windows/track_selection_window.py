@@ -62,7 +62,6 @@ class TrackSelectionWindow(QWidget):
 
     def create_track_frame(self, track, progress):
         frame = QFrame()
-        frame.setStyleSheet("background-color: #303030; border: 1px solid #aaa; border-radius: 5px;")
         frame.setFixedHeight(100)
 
         hbox = QHBoxLayout()

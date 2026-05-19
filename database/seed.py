@@ -50,17 +50,21 @@ def seed_shop_data(db):
 
     # ---- Темы профиля ----
     themes = [
-        ("Классическая", "profile_theme", "Стандартная тема оформления", "assets/shop/theme_classic.png"),
-        ("Кислотный жёлтый", "profile_theme", "Яркая жёлтая тема", "assets/shop/theme_yellow.png"),
-        ("Неоновый синий", "profile_theme", "Тема в синих тонах", "assets/shop/theme_blue.png"),
-        ("Тёмный реактив", "profile_theme", "Тёмная тема с зелёными акцентами", "assets/shop/theme_dark.png"),
+        ("Классическая", "profile_theme", "Стандартная тема оформления", "assets/shop/theme_classic.png", False),
+        ("Кислотный жёлтый", "profile_theme", "Яркая жёлтая тема", "assets/shop/theme_yellow.png", True),
+        ("Неоновый синий", "profile_theme", "Тема в синих тонах", "assets/shop/theme_blue.png", True),
+        ("Тёмный реактив", "profile_theme", "Тёмная тема с зелёными акцентами", "assets/shop/theme_dark.png", True),
     ]
-    for name, cat, desc, icon in themes:
+    for name, cat, desc, icon, purchasable in themes:
         item_type = ItemType(name=name, category=cat, description=desc, icon_url=icon, max_stack=1)
         db.add(item_type)
         db.flush()
-        db.add(ShopItem(item_type_id=item_type.id, price_coins=100, price_crystals=0, is_active=True))
-
+        if purchasable:
+            db.add(ShopItem(item_type_id=item_type.id, price_coins=100, price_crystals=0, is_active=True))
+        else:
+            # Классическая тема не появляется в магазине, но тип предмета существует
+            pass
+        
     # ---- Витрины ----
     showcases = [
         ("Простая полка", "showcase", "Деревянная полка на 2 предмета", "assets/shop/showcase_simple.png", 2),

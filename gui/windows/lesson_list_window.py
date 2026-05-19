@@ -90,7 +90,7 @@ class LessonListWindow(QWidget):
 
     def create_lesson_frame(self, lesson, title, progress, is_locked):
         frame = QFrame()
-        frame.setStyleSheet("background-color: #303030; border: 1px solid #aaa; border-radius: 5px;")
+        frame.setProperty("class", "lesson-frame")
         frame.setFixedHeight(70)
 
         hbox = QHBoxLayout()
@@ -124,7 +124,7 @@ class LessonListWindow(QWidget):
             else:
                 status_text = "Новый"
         status_label = QLabel(status_text)
-        status_label.setStyleSheet("color: #aaa;")
+        status_label.setProperty("class", "status-label")
 
         hbox.addWidget(num_label)
         hbox.addWidget(name_label, 1)

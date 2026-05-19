@@ -49,6 +49,13 @@
 -- seed.py
 - gui/
 -- styles/
+---- themes/
+-------- acid_yellow.qss
+-------- classic.qss
+-------- dark_reactive.qss
+-------- neon_blue.qss
+---- __init__.py
+---- theme_manager.py
 -- widgets/
 ---- molecule_widget.py
 ---- task_widgets.py
@@ -785,17 +792,21 @@ def seed_shop_data(db):
 
     # ---- Темы профиля ----
     themes = [
-        ("Классическая", "profile_theme", "Стандартная тема оформления", "assets/shop/theme_classic.png"),
-        ("Кислотный жёлтый", "profile_theme", "Яркая жёлтая тема", "assets/shop/theme_yellow.png"),
-        ("Неоновый синий", "profile_theme", "Тема в синих тонах", "assets/shop/theme_blue.png"),
-        ("Тёмный реактив", "profile_theme", "Тёмная тема с зелёными акцентами", "assets/shop/theme_dark.png"),
+        ("Классическая", "profile_theme", "Стандартная тема оформления", "assets/shop/theme_classic.png", False),
+        ("Кислотный жёлтый", "profile_theme", "Яркая жёлтая тема", "assets/shop/theme_yellow.png", True),
+        ("Неоновый синий", "profile_theme", "Тема в синих тонах", "assets/shop/theme_blue.png", True),
+        ("Тёмный реактив", "profile_theme", "Тёмная тема с зелёными акцентами", "assets/shop/theme_dark.png", True),
     ]
-    for name, cat, desc, icon in themes:
+    for name, cat, desc, icon, purchasable in themes:
         item_type = ItemType(name=name, category=cat, description=desc, icon_url=icon, max_stack=1)
         db.add(item_type)
         db.flush()
-        db.add(ShopItem(item_type_id=item_type.id, price_coins=100, price_crystals=0, is_active=True))
-
+        if purchasable:
+            db.add(ShopItem(item_type_id=item_type.id, price_coins=100, price_crystals=0, is_active=True))
+        else:
+            # Классическая тема не появляется в магазине, но тип предмета существует
+            pass
+        
     # ---- Витрины ----
     showcases = [
         ("Простая полка", "showcase", "Деревянная полка на 2 предмета", "assets/shop/showcase_simple.png", 2),
@@ -1583,6 +1594,322 @@ def seed_data():
 
 if __name__ == "__main__":
     seed_data()
+```
+
+gui/styles/themes/acid_yellow.qss ```
+QWidget {
+    background-color: #FFF3CC;
+    color: #202020;
+    font-size: 14px;
+}
+QMainWindow {
+    background-color: #FFDB41;
+}
+QLabel {
+    color: #202020;
+}
+QPushButton {
+    background-color: #F4897B;
+    border: 2px solid #FD3305;
+    padding: 6px 12px;
+    border-radius: 4px;
+    color: white;
+    font-weight: bold;
+}
+QPushButton:hover {
+    background-color: #FD3305;
+}
+QLineEdit, QComboBox, QSpinBox {
+    background-color: #FFC06B;
+    border: 1px solid #FD3305;
+    padding: 4px;
+    border-radius: 3px;
+    color: #202020;
+}
+QScrollArea {
+    background: transparent;
+}
+QFrame {
+    background-color: #FFC06B;
+    border: 1px solid #FD3305;
+    border-radius: 5px;
+}
+QTabWidget::pane {
+    background-color: #FFDB41;
+    border: 1px solid #FD3305;
+}
+QTabBar::tab {
+    background: #F4897B;
+    padding: 6px 12px;
+    border: 1px solid #FD3305;
+    border-bottom: none;
+    border-top-left-radius: 4px;
+    border-top-right-radius: 4px;
+    color: white;
+}
+QTabBar::tab:selected {
+    background: #FFDB41;
+    color: #202020;
+}
+QTableWidget {
+    background-color: #FFF3CC;
+    gridline-color: #FD3305;
+}
+QFrame.lesson-frame {
+    background-color: #FFC06B;
+    border: 1px solid #FD3305;
+    border-radius: 5px;
+}
+QLabel.status-label {
+    color: #FD3305;
+}
+```
+
+gui/styles/themes/classic.qss ```
+QWidget {
+    background-color: #303030;
+    color: #FFFFFF;
+    font-size: 14px;
+}
+QMainWindow {
+    background-color: #303030;
+}
+QLabel {
+    color: #FFFFFF;
+}
+QPushButton {
+    background-color: #505050;
+    border: 1px solid #AAAAAA;
+    padding: 6px 12px;
+    border-radius: 4px;
+    color: #FFFFFF;
+}
+QPushButton:hover {
+    background-color: #606060;
+}
+QLineEdit, QComboBox, QSpinBox {
+    background-color: #202020;
+    border: 1px solid #AAAAAA;
+    padding: 4px;
+    border-radius: 3px;
+    color: #FFFFFF;
+}
+QScrollArea {
+    background: transparent;
+}
+QFrame {
+    background-color: #303030;
+    border: 1px solid #AAAAAA;
+    border-radius: 5px;
+}
+QTabWidget::pane {
+    background-color: #303030;
+    border: 1px solid #AAAAAA;
+}
+QTabBar::tab {
+    background: #505050;
+    padding: 6px 12px;
+    border: 1px solid #AAAAAA;
+    border-bottom: none;
+    border-top-left-radius: 4px;
+    border-top-right-radius: 4px;
+    color: #FFFFFF;
+}
+QTabBar::tab:selected {
+    background: #303030;
+}
+QTableWidget {
+    background-color: #202020;
+    gridline-color: #AAAAAA;
+    color: #FFFFFF;
+}
+QTableWidget QHeaderView::section {
+    background-color: #505050;
+    padding: 4px;
+    border: 1px solid #AAAAAA;
+}
+QFrame.lesson-frame {
+    background-color: #303030;
+    border: 1px solid #AAAAAA;
+    border-radius: 5px;
+}
+QLabel.status-label {
+    color: #AAAAAA;
+}
+```
+
+gui/styles/themes/dark_reactive.qss ```
+QWidget {
+    background-color: #202020;
+    color: #D0D0D0;
+    font-size: 14px;
+}
+QMainWindow {
+    background-color: #202020;
+}
+QLabel {
+    color: #D0D0D0;
+}
+QPushButton {
+    background-color: #26A4A3;
+    border: 2px solid #ADC914;
+    padding: 6px 12px;
+    border-radius: 4px;
+    color: #131313;
+    font-weight: bold;
+}
+QPushButton:hover {
+    background-color: #ADC914;
+}
+QLineEdit, QComboBox, QSpinBox {
+    background-color: #131313;
+    border: 1px solid #ADC914;
+    padding: 4px;
+    border-radius: 3px;
+    color: #D0D0D0;
+}
+QScrollArea {
+    background: transparent;
+}
+QFrame {
+    background-color: #131313;
+    border: 1px solid #ADC914;
+    border-radius: 5px;
+}
+QTabWidget::pane {
+    background-color: #202020;
+    border: 1px solid #ADC914;
+}
+QTabBar::tab {
+    background: #26A4A3;
+    padding: 6px 12px;
+    border: 1px solid #ADC914;
+    border-bottom: none;
+    border-top-left-radius: 4px;
+    border-top-right-radius: 4px;
+    color: #131313;
+}
+QTabBar::tab:selected {
+    background: #ADC914;
+    color: #202020;
+}
+QTableWidget {
+    background-color: #131313;
+    gridline-color: #ADC914;
+}
+```
+
+gui/styles/themes/neon_blue.qss ```
+QWidget {
+    background-color: #010022;
+    color: #B0B0FF;
+    font-size: 14px;
+}
+QMainWindow {
+    background-color: #010022;
+}
+QLabel {
+    color: #B0B0FF;
+}
+QPushButton {
+    background-color: #1343ED;
+    border: 2px solid #512FFF;
+    padding: 6px 12px;
+    border-radius: 4px;
+    color: white;
+    font-weight: bold;
+}
+QPushButton:hover {
+    background-color: #512FFF;
+}
+QLineEdit, QComboBox, QSpinBox {
+    background-color: #000141;
+    border: 1px solid #512FFF;
+    padding: 4px;
+    border-radius: 3px;
+    color: #B0B0FF;
+}
+QScrollArea {
+    background: transparent;
+}
+QFrame {
+    background-color: #000141;
+    border: 1px solid #512FFF;
+    border-radius: 5px;
+}
+QTabWidget::pane {
+    background-color: #010022;
+    border: 1px solid #512FFF;
+}
+QTabBar::tab {
+    background: #1343ED;
+    padding: 6px 12px;
+    border: 1px solid #512FFF;
+    border-bottom: none;
+    border-top-left-radius: 4px;
+    border-top-right-radius: 4px;
+    color: white;
+}
+QTabBar::tab:selected {
+    background: #512FFF;
+    color: #B0B0FF;
+}
+QTableWidget {
+    background-color: #000141;
+    gridline-color: #512FFF;
+}
+```
+
+gui/styles/__init__.py ```
+
+```
+
+gui/styles/theme_manager.py ```
+# gui/styles/theme_manager.py
+import os
+from PyQt6.QtWidgets import QApplication
+from sqlalchemy.orm import Session
+from services.shop_service import ShopService
+
+THEMES = {
+    "classic": "gui/styles/themes/classic.qss",
+    "acid_yellow": "gui/styles/themes/acid_yellow.qss",
+    "neon_blue": "gui/styles/themes/neon_blue.qss",
+    "dark_reactive": "gui/styles/themes/dark_reactive.qss",
+}
+
+def _read_stylesheet(filename: str) -> str:
+    with open(filename, 'r', encoding='utf-8') as f:
+        return f.read()
+
+def apply_theme(theme_name: str) -> None:
+    """Применить QSS-тему глобально ко всему приложению."""
+    app = QApplication.instance()
+    if app is None:
+        return
+    if theme_name not in THEMES:
+        theme_name = "classic"  # fallback
+    path = os.path.join(os.path.dirname(__file__), "themes", f"{theme_name}.qss")
+    if not os.path.exists(path):
+        path = os.path.join(os.path.dirname(__file__), "themes", "classic.qss")
+    stylesheet = _read_stylesheet(path)
+    app.setStyleSheet(stylesheet)
+
+def get_user_theme(user_id, db: Session) -> str:
+    """Определяет активную тему пользователя."""
+    shop = ShopService(db)
+    equipped = shop.get_equipped_theme(user_id)
+    if equipped:
+        # Предположим, что название предмета совпадает с ключом темы (например, "Кислотный жёлтый" -> "acid_yellow")
+        name = equipped.item_type.name
+        mapping = {
+            "Классическая": "classic",
+            "Кислотный жёлтый": "acid_yellow",
+            "Неоновый синий": "neon_blue",
+            "Тёмный реактив": "dark_reactive",
+        }
+        return mapping.get(name, "classic")
+    return "classic"
 ```
 
 gui/widgets/molecule_widget.py ```
@@ -2538,7 +2865,7 @@ class LessonListWindow(QWidget):
 
     def create_lesson_frame(self, lesson, title, progress, is_locked):
         frame = QFrame()
-        frame.setStyleSheet("background-color: #303030; border: 1px solid #aaa; border-radius: 5px;")
+        frame.setProperty("class", "lesson-frame")
         frame.setFixedHeight(70)
 
         hbox = QHBoxLayout()
@@ -2572,7 +2899,7 @@ class LessonListWindow(QWidget):
             else:
                 status_text = "Новый"
         status_label = QLabel(status_text)
-        status_label.setStyleSheet("color: #aaa;")
+        status_label.setProperty("class", "status-label")
 
         hbox.addWidget(num_label)
         hbox.addWidget(name_label, 1)
@@ -2661,7 +2988,7 @@ class LessonWindow(QWidget):
         title_label = QLabel(self.active_version.title)
         title_label.setStyleSheet("font-size: 18px; font-weight: bold;")
         xp_label = QLabel(f"Награда: {self.active_version.xp_reward} XP")
-        xp_label.setStyleSheet("color: #aaa;")
+        xp_label.setProperty("class", "xp-label")
         header.addWidget(title_label)
         header.addStretch()
         header.addWidget(xp_label)
@@ -2984,6 +3311,7 @@ from gui.windows.register_window import RegisterWindow
 from gui.windows.main_window import MainMenuWindow
 from services.auth_service import AuthService
 from services.leaderboard_service import LeaderboardService
+from gui.styles.theme_manager import apply_theme, get_user_theme
 
 class LoginWindow(QWidget):
 
@@ -3063,6 +3391,9 @@ class LoginWindow(QWidget):
             if result.current_streak:
                 lb_service.update_entry(result.id, 'current_streak', result.current_streak)
             
+            theme = get_user_theme(user.id, self.db_session)
+            apply_theme(theme)
+
             self.close()
             self.main_window = MainMenuWindow(result, self.db_session)
             self.main_window.show()
@@ -3179,6 +3510,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt
 from services.shop_service import ShopService
 from services.achievement_service import AchievementService
+from database.models.user import ItemType
 
 class ProfileSettingsWindow(QWidget):
     def __init__(self, user, db_session):
@@ -3223,7 +3555,6 @@ class ProfileSettingsWindow(QWidget):
         layout = QVBoxLayout()
         layout.addWidget(QLabel("Выберите аватар из вашего инвентаря:"))
         list_widget = QListWidget()
-        # Получаем все аватары в инвентаре
         inventory = self.shop_svc.get_inventory(self.user.id)
         equipped_avatar = self.shop_svc.get_equipped_avatar(self.user.id)
         for inv in inventory:
@@ -3248,9 +3579,23 @@ class ProfileSettingsWindow(QWidget):
         widget = QWidget()
         layout = QVBoxLayout()
         layout.addWidget(QLabel("Выберите тему профиля:"))
-        list_widget = QListWidget()
+
+        # 1. Гарантируем, что классическая тема есть у пользователя
+        classic_theme = self.db.query(ItemType).filter(ItemType.name == "Классическая").first()
+        if classic_theme:
+            from database.models.user import UserInventory
+            existing = self.db.query(UserInventory).filter(
+                UserInventory.user_id == self.user.id,
+                UserInventory.item_type_id == classic_theme.id
+            ).first()
+            if not existing:
+                self.shop_svc.add_item_to_inventory(self.user.id, classic_theme.id)
+
+        # 2. Получаем актуальный инвентарь и показываем список
         inventory = self.shop_svc.get_inventory(self.user.id)
         equipped_theme = self.shop_svc.get_equipped_theme(self.user.id)
+
+        list_widget = QListWidget()
         for inv in inventory:
             if inv.item_type.category != 'profile_theme':
                 continue
@@ -3267,6 +3612,9 @@ class ProfileSettingsWindow(QWidget):
     def equip_theme(self, item):
         inv_id = item.data(1)
         self.shop_svc.equip_item(self.user.id, inv_id)
+        from gui.styles.theme_manager import apply_theme, get_user_theme
+        theme = get_user_theme(self.user.id, self.db)
+        apply_theme(theme)
         QMessageBox.information(self, "Тема", "Тема обновлена!")
 
     def create_showcase_tab(self):
@@ -3286,14 +3634,20 @@ class ProfileSettingsWindow(QWidget):
                 self.showcase_ids.append(inv.id)
         active = self.shop_svc.get_active_showcase(self.user.id)
         if active:
-            idx = self.showcase_ids.index(active.id) if active.id in self.showcase_ids else 0
+            # ИСПРАВЛЕНО: учитываем первый пункт "Без витрины"
+            if active.id in self.showcase_ids:
+                idx = self.showcase_ids.index(active.id) + 1
+            else:
+                idx = 0
             self.showcase_combo.setCurrentIndex(idx)
+        else:
+            self.showcase_combo.setCurrentIndex(0)
         self.showcase_combo.currentIndexChanged.connect(self.on_showcase_changed)
         layout.addWidget(self.showcase_combo)
 
         # Слоты витрины
         layout.addWidget(QLabel("Заполнение слотов:"))
-        self.slots_layout = QVBoxLayout()  # будет перестраиваться
+        self.slots_layout = QVBoxLayout()
         layout.addLayout(self.slots_layout)
         self.refresh_slots()
 
@@ -3305,6 +3659,9 @@ class ProfileSettingsWindow(QWidget):
             return
         inv_id = self.showcase_combo.currentData()
         if inv_id is None:
+            self.shop_svc.unequip_showcase(self.user.id)
+            self.refresh_slots()
+            QMessageBox.information(self, "Витрина", "Витрина снята")
             return
         success, msg = self.shop_svc.equip_item(self.user.id, inv_id)
         if success:
@@ -3314,34 +3671,55 @@ class ProfileSettingsWindow(QWidget):
             QMessageBox.warning(self, "Ошибка", msg)
 
     def refresh_slots(self):
-        # Очищаем и перестраиваем слоты
+        # Очищаем текущие виджеты слотов
         while self.slots_layout.count():
             child = self.slots_layout.takeAt(0)
             if child.widget():
                 child.widget().deleteLater()
+
         active = self.shop_svc.get_active_showcase(self.user.id)
         if not active:
             self.slots_layout.addWidget(QLabel("Нет активной витрины"))
             return
+
         capacity = active.item_type.capacity
         slots = self.shop_svc.get_showcase_slots(self.user.id)
-        # Получаем список доступных артефактов (не экипированных)
         inventory = self.shop_svc.get_inventory(self.user.id)
-        available_artifacts = [inv for inv in inventory if inv.item_type.category == 'artifact' and not inv.is_equipped]
-        for slot_num in range(1, capacity+1):
+
+        for slot_num in range(1, capacity + 1):
+            # ИСПРАВЛЕНО: строим список артефактов для этого слота
+            # включаем артефакт, который сейчас стоит в этом слоте (даже если equipped=True),
+            # но исключаем артефакты, уже занятые в ДРУГИХ слотах
+            current_artifact = slots.get(slot_num)
+            current_art_id = current_artifact.id if current_artifact else None
+            artifacts_for_slot = []
+            for inv in inventory:
+                if inv.item_type.category != 'artifact':
+                    continue
+                # Если это текущий артефакт слота — включаем всегда
+                if inv.id == current_art_id:
+                    artifacts_for_slot.append(inv)
+                # Иначе включаем только не экипированные
+                elif not inv.is_equipped:
+                    artifacts_for_slot.append(inv)
+
             slot_widget = QWidget()
             slot_layout = QHBoxLayout()
             slot_layout.addWidget(QLabel(f"Слот {slot_num}:"))
+
             combo = QComboBox()
             combo.addItem("Пусто", None)
-            current_artifact = slots.get(slot_num)
             selected_idx = 0
-            for i, art in enumerate(available_artifacts):
+            for i, art in enumerate(artifacts_for_slot):
                 combo.addItem(art.item_type.name, art.id)
-                if current_artifact and art.id == current_artifact.id:
-                    selected_idx = i+1
+                if art.id == current_art_id:
+                    selected_idx = i + 1
             combo.setCurrentIndex(selected_idx)
-            combo.currentIndexChanged.connect(lambda idx, s=slot_num, c=combo: self.place_artifact(s, c))
+
+            # Захват переменных для лямбды осуществляется через аргументы по умолчанию
+            combo.currentIndexChanged.connect(
+                lambda idx, s=slot_num, c=combo: self.place_artifact(s, c)
+            )
             slot_layout.addWidget(combo)
             slot_widget.setLayout(slot_layout)
             self.slots_layout.addWidget(slot_widget)
@@ -3356,8 +3734,11 @@ class ProfileSettingsWindow(QWidget):
                 QMessageBox.information(self, "Витрина", "Артефакт размещён")
                 self.refresh_slots()
         else:
-            # Пока просто обновим отображение
+            # Если выбран "Пусто" — убрать артефакт из слота (предполагаем, что метод поддерживает это)
+            self.shop_svc.remove_artifact_from_slot(self.user.id, slot)
             self.refresh_slots()
+            QMessageBox.information(self, "Витрина", "Артефакт убран")
+            return
 
     def create_achievements_tab(self):
         widget = QWidget()
@@ -3831,7 +4212,6 @@ class TrackSelectionWindow(QWidget):
 
     def create_track_frame(self, track, progress):
         frame = QFrame()
-        frame.setStyleSheet("background-color: #303030; border: 1px solid #aaa; border-radius: 5px;")
         frame.setFixedHeight(100)
 
         hbox = QHBoxLayout()
@@ -4020,7 +4400,8 @@ class AchievementService:
 services/auth_service.py ```
 import bcrypt
 from database.db import SessionLocal
-from database.models.user import User
+from database.models.user import User, UserInventory, ItemType
+from services.shop_service import ShopService
 
 
 class AuthService:
@@ -4057,7 +4438,20 @@ class AuthService:
 
         db.add(user)
         db.commit()
-
+        db.refresh(user)
+        # Выдаём классическую тему
+        classic_theme = db.query(ItemType).filter(ItemType.name == "Классическая").first()
+        if classic_theme:
+            shop = ShopService(db)  # придётся импортировать
+            shop.add_item_to_inventory(user.id, classic_theme.id)
+            # Сразу экипируем её
+            equipped = db.query(UserInventory).filter(
+                UserInventory.user_id == user.id,
+                UserInventory.item_type_id == classic_theme.id
+            ).first()
+            if equipped:
+                shop.equip_item(user.id, equipped.id)  # equip_item сам снимет другие темы
+        db.close()
         return True, "Успешная регистрация"
 
     @staticmethod
@@ -4661,6 +5055,21 @@ class ShopService:
         inv.equipped_slot = None  # витрина не имеет слота
         self.db.commit()
         return True, "Предмет экипирован"
+    
+    def remove_artifact_from_slot(self, user_id: uuid.UUID, slot: int):
+        """Убирает артефакт из указанного слота активной витрины."""
+        art = self.db.query(UserInventory).filter(
+            UserInventory.user_id == user_id,
+            UserInventory.is_equipped == True,
+            UserInventory.equipped_slot == slot,
+            UserInventory.item_type.has(category='artifact')
+        ).first()
+        if art:
+            art.is_equipped = False
+            art.equipped_slot = None
+            self.db.commit()
+            return True, "Артефакт удалён из слота"
+        return False, "Слот пуст"
 
     def unequip_item(self, user_id: uuid.UUID, inventory_id: int):
         inv = self.db.query(UserInventory).filter(
@@ -4670,6 +5079,27 @@ class ShopService:
             inv.is_equipped = False
             inv.equipped_slot = None
             self.db.commit()
+
+    def unequip_showcase(self, user_id: uuid.UUID):
+        """Снимает активную витрину и очищает все связанные слоты."""
+        showcase = self.get_active_showcase(user_id)
+        if not showcase:
+            return
+        # Снимаем все артефакты, которые были в слотах
+        artifacts = self.db.query(UserInventory).filter(
+            UserInventory.user_id == user_id,
+            UserInventory.is_equipped == True,
+            UserInventory.item_type.has(category='artifact')
+        ).all()
+        for art in artifacts:
+            art.is_equipped = False
+            art.equipped_slot = None
+        # Снимаем саму витрину
+        showcase.is_equipped = False
+        showcase.equipped_slot = None
+        # Удаляем записи слотов витрины (при их наличии)
+        self.db.query(UserShowcase).filter(UserShowcase.user_id == user_id).delete()
+        self.db.commit()
 
     def get_equipped_avatar(self, user_id: uuid.UUID) -> Optional[UserInventory]:
         return self.db.query(UserInventory).filter(
