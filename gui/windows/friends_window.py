@@ -99,8 +99,7 @@ class FriendsWindow(QWidget):
 
             friend_frame = QFrame()
             friend_frame.setStyleSheet("""
-                background-color: #303030;
-                border: 1px solid #999;
+                border: 1px solid;
             """)
             friend_frame.setFixedHeight(40)
 
@@ -145,8 +144,7 @@ class FriendsWindow(QWidget):
 
             request_frame = QFrame()
             request_frame.setStyleSheet("""
-                background-color: #303030;
-                border: 1px solid #aaa;
+                border: 1px solid;
             """)
             request_frame.setFixedHeight(40)
 

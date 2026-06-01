@@ -14,7 +14,7 @@ from services.task_service import TaskService
 from services.progress_service import ProgressService
 from gui.widgets.task_widgets import create_task_widget
 from gui.widgets.molecule_widget import MoleculeWidget
-from database.models.content import LessonVersion
+from database.models.content import Lesson
 from database.models.progress import TaskAttempt, UserLessonProgress
 from services.currency_service import CurrencyService
 from services.achievement_service import AchievementService
@@ -309,6 +309,16 @@ class LessonWindow(QWidget):
             lesson_progress.status = 'completed'
             lesson_progress.completed_at = func.now()
             track_progress.total_xp += self.active_version.xp_reward
+            self.db.commit()
+
+            next_lesson = self.db.query(Lesson).filter(
+                Lesson.track_id == self.track.id,
+                Lesson.order_index > self.lesson.order_index
+            ).order_by(Lesson.order_index).first()
+            if next_lesson:
+                track_progress.current_lesson_index = next_lesson.order_index
+            else:
+                track_progress.current_lesson_index = self.lesson.order_index
             self.db.commit()
 
             # ---------- Геймификация ----------

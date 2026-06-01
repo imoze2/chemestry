@@ -15,7 +15,14 @@ class StatisticsService:
                 UserTopicStats.topic_tag == tag
             ).first()
             if not stats:
-                stats = UserTopicStats(user_id=user_id, topic_tag=tag)
+                stats = UserTopicStats(
+                    user_id=user_id,
+                    topic_tag=tag,
+                    total_attempts = 0,
+                    correct_attempts = 0,
+                    current_streak = 0,
+                    max_streak = 0
+                    )
                 self.db.add(stats)
 
             if stats.total_attempts:

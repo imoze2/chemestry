@@ -69,10 +69,9 @@ class TrackSelectionWindow(QWidget):
         # Информация о треке
         info_layout = QVBoxLayout()
         name_label = QLabel(track.name)
-        name_label.setStyleSheet("font-size: 16px; font-weight: bold; color: white;")
+        name_label.setStyleSheet("font-size: 16px; font-weight: bold;")
         desc_label = QLabel(track.description or "")
         desc_label.setWordWrap(True)
-        desc_label.setStyleSheet("color: #ccc;")
 
         # Прогресс
         if progress:
@@ -84,7 +83,6 @@ class TrackSelectionWindow(QWidget):
         else:
             progress_text = "Новый трек"
         progress_label = QLabel(progress_text)
-        progress_label.setStyleSheet("color: #aaa;")
 
         info_layout.addWidget(name_label)
         info_layout.addWidget(desc_label)

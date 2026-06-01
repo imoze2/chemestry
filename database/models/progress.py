@@ -103,10 +103,6 @@ class UserTopicStats(Base):
     total_attempts = Column(Integer, default=0)
     correct_attempts = Column(Integer, default=0)
 
-    # Вычисляемое поле через свойство или гибридное свойство
-    # В SQLAlchemy это можно сделать через column_property или обычный @property
-    # Для хранения используем DECIMAL, но в БД это GENERATED столбец.
-    # Мы можем определить его как обычную колонку, но заполнять при обновлении.
     accuracy_rate = Column(DECIMAL(5,2))
 
     stats_by_task_type = Column(JSONB, default={})

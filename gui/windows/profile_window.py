@@ -1,5 +1,5 @@
 from PyQt6.QtWidgets import (
-    QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout, QScrollArea, QFrame, QMessageBox
+    QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout, QScrollArea, QFrame, QSizePolicy
 )
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QPixmap
@@ -91,7 +91,7 @@ class ProfileWindow(QWidget):
             slot_widget = QWidget()
             slot_layout = QVBoxLayout()
             slot_widget.setFixedSize(80, 80)
-            slot_widget.setStyleSheet("background-color: #202020; border: 1px solid gray;")
+            slot_widget.setStyleSheet("border: 1px solid;")
             if slot_num in slots:
                 art_inv = slots[slot_num]
                 icon_label = QLabel()
@@ -129,8 +129,10 @@ class ProfileWindow(QWidget):
         else:
             for ua in displayed:
                 frame = QFrame()
-                frame.setFixedSize(70, 70)
-                frame.setStyleSheet("background-color: #202020; border: 1px solid gold;")
+                frame.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Minimum)
+                frame.setMinimumHeight(70)
+                frame.setMaximumWidth(200)
+                frame.setStyleSheet("border: 2px solid #81C784;")
                 lbl = QLabel(ua.achievement.name)
                 lbl.setWordWrap(True)
                 lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)

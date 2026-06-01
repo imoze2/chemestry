@@ -246,13 +246,17 @@ class ProfileSettingsWindow(QWidget):
             cb = QPushButton(f"{ua.achievement.name} {'✅' if ua.is_displayed else '❌'}")
             cb.setCheckable(True)
             cb.setChecked(ua.is_displayed)
-            cb.clicked.connect(lambda checked, ua=ua: self.toggle_achievement_display(ua.id, checked))
+            cb.ua_id = ua.id
+            cb.achievement_name = ua.achievement.name
+            cb.clicked.connect(lambda checked, cb=cb: self.toggle_achievement_display(cb, checked))
             layout.addWidget(cb)
         widget.setLayout(layout)
         return widget
 
-    def toggle_achievement_display(self, ua_id, show):
-        self.ach_svc.toggle_display(self.user.id, ua_id, show)
+    def toggle_achievement_display(self, button, checked):
+        self.ach_svc.toggle_display(self.user.id, button.ua_id, checked)
+        button.setText(f"{button.achievement_name} {'✅' if checked else '❌'}")
+        button.setChecked(checked)
 
     def back_to_profile(self):
         from gui.windows.profile_window import ProfileWindow

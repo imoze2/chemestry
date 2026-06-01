@@ -97,12 +97,12 @@ class LessonListWindow(QWidget):
 
         # Номер урока
         num_label = QLabel(f"{lesson.order_index+1}.")
-        num_label.setStyleSheet("font-size: 16px; font-weight: bold; color: white;")
+        num_label.setStyleSheet("font-size: 16px; font-weight: bold;")
         num_label.setFixedWidth(30)
 
         # Название
         name_label = QLabel(title)
-        name_label.setStyleSheet("font-size: 14px; color: white;")
+        name_label.setStyleSheet("font-size: 14px;")
 
         # Статус
         if progress:

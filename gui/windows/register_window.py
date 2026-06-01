@@ -24,6 +24,8 @@ def validate_email(email: str) -> bool:
         dns.resolver.resolve(domain, "MX")
         return True
     except:
+        if domain in ['mail.ru', 'yandex.ru', 'list.ru', 'gmail.com']:
+            return True
         return False
 
 class RegisterWindow(QWidget):
