@@ -15,19 +15,6 @@ from sqlalchemy import text
 import random
 import datetime
 
-def clear_content(db):
-    """Удаляем все данные контента в правильном порядке, чтобы избежать FK ошибок"""
-    db.execute(text("DELETE FROM lesson_tasks"))
-    db.execute(text("DELETE FROM task_variants"))
-    db.execute(text("DELETE FROM tasks"))
-    db.execute(text("DELETE FROM task_generators"))
-    db.execute(text("DELETE FROM lesson_theory"))
-    db.execute(text("DELETE FROM theory"))
-    db.execute(text("DELETE FROM lesson_versions"))
-    db.execute(text("DELETE FROM lessons"))
-    db.execute(text("DELETE FROM tracks"))
-    db.commit()
-
 def seed_shop_data(db):
     """Заполняет типы предметов и товары магазина."""
     # Проверяем, есть ли уже предметы
@@ -236,11 +223,10 @@ def seed_achievements(db):
 def seed_data():
     db = SessionLocal()
 
-    # Проверяем, есть ли уже треки, и если да – удаляем всё для чистого старта
     if db.query(Track).count() > 0:
-        print("Удаляем существующий контент...")
-        clear_content(db)
-        print("Создаём новый контент.")
+        print("Данные уже существуют. Заполнение пропущено.")
+        db.close()
+        return
 
     # ======================= ТРЕКИ =======================
     track8 = Track(name="Химия. 8 класс", description="Базовый курс химии для 8 класса", is_published=True)
