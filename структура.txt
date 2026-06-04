@@ -512,10 +512,6 @@ class UserTopicStats(Base):
     total_attempts = Column(Integer, default=0)
     correct_attempts = Column(Integer, default=0)
 
-    # Вычисляемое поле через свойство или гибридное свойство
-    # В SQLAlchemy это можно сделать через column_property или обычный @property
-    # Для хранения используем DECIMAL, но в БД это GENERATED столбец.
-    # Мы можем определить его как обычную колонку, но заполнять при обновлении.
     accuracy_rate = Column(DECIMAL(5,2))
 
     stats_by_task_type = Column(JSONB, default={})
@@ -758,19 +754,6 @@ from sqlalchemy import text
 import random
 import datetime
 
-def clear_content(db):
-    """Удаляем все данные контента в правильном порядке, чтобы избежать FK ошибок"""
-    db.execute(text("DELETE FROM lesson_tasks"))
-    db.execute(text("DELETE FROM task_variants"))
-    db.execute(text("DELETE FROM tasks"))
-    db.execute(text("DELETE FROM task_generators"))
-    db.execute(text("DELETE FROM lesson_theory"))
-    db.execute(text("DELETE FROM theory"))
-    db.execute(text("DELETE FROM lesson_versions"))
-    db.execute(text("DELETE FROM lessons"))
-    db.execute(text("DELETE FROM tracks"))
-    db.commit()
-
 def seed_shop_data(db):
     """Заполняет типы предметов и товары магазина."""
     # Проверяем, есть ли уже предметы
@@ -979,11 +962,10 @@ def seed_achievements(db):
 def seed_data():
     db = SessionLocal()
 
-    # Проверяем, есть ли уже треки, и если да – удаляем всё для чистого старта
     if db.query(Track).count() > 0:
-        print("Удаляем существующий контент...")
-        clear_content(db)
-        print("Создаём новый контент.")
+        print("Данные уже существуют. Заполнение пропущено.")
+        db.close()
+        return
 
     # ======================= ТРЕКИ =======================
     track8 = Track(name="Химия. 8 класс", description="Базовый курс химии для 8 класса", is_published=True)
@@ -1668,75 +1650,194 @@ QLabel.status-label {
 
 gui/styles/themes/classic.qss ```
 QWidget {
-    background-color: #303030;
-    color: #FFFFFF;
+    background-color: #E8F5E9;
+    color: #1B5E20;
     font-size: 14px;
 }
 QMainWindow {
-    background-color: #303030;
+    background-color: #E8F5E9;
 }
 QLabel {
-    color: #FFFFFF;
+    color: #1B5E20;
+    background-color: transparent;
 }
 QPushButton {
-    background-color: #505050;
-    border: 1px solid #AAAAAA;
+    background-color: #C8E6C9;
+    border: 1px solid #81C784;
     padding: 6px 12px;
     border-radius: 4px;
-    color: #FFFFFF;
+    color: #1B5E20;
+    font-weight: bold;
 }
 QPushButton:hover {
-    background-color: #606060;
+    background-color: #A5D6A7;
+    border-color: #4CAF50;
+}
+QPushButton:pressed {
+    background-color: #81C784;
 }
 QLineEdit, QComboBox, QSpinBox {
-    background-color: #202020;
-    border: 1px solid #AAAAAA;
+    background-color: #FFFFFF;
+    border: 1px solid #A5D6A7;
     padding: 4px;
     border-radius: 3px;
-    color: #FFFFFF;
+    color: #1B5E20;
+}
+QLineEdit:focus, QComboBox:focus, QSpinBox:focus {
+    border-color: #4CAF50;
 }
 QScrollArea {
     background: transparent;
 }
+QScrollBar:vertical {
+    background: #E8F5E9;
+    width: 12px;
+    border-radius: 6px;
+}
+QScrollBar::handle:vertical {
+    background: #A5D6A7;
+    border-radius: 6px;
+    min-height: 20px;
+}
+QScrollBar::handle:vertical:hover {
+    background: #81C784;
+}
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+    height: 0px;
+}
 QFrame {
-    background-color: #303030;
-    border: 1px solid #AAAAAA;
+    background-color: #F1F8E9;
+    border: 1px solid #C8E6C9;
     border-radius: 5px;
 }
+QFrame.lesson-frame {
+    background-color: #F1F8E9;
+    border: 1px solid #A5D6A7;
+    border-radius: 8px;
+}
+QFrame.lesson-frame QLabel {
+    color: #1B5E20;
+}
+QLabel.status-label {
+    color: #2E7D32;
+    font-weight: bold;
+}
 QTabWidget::pane {
-    background-color: #303030;
-    border: 1px solid #AAAAAA;
+    background-color: #E8F5E9;
+    border: 1px solid #C8E6C9;
 }
 QTabBar::tab {
-    background: #505050;
+    background: #C8E6C9;
     padding: 6px 12px;
-    border: 1px solid #AAAAAA;
+    border: 1px solid #A5D6A7;
     border-bottom: none;
     border-top-left-radius: 4px;
     border-top-right-radius: 4px;
-    color: #FFFFFF;
+    color: #1B5E20;
 }
 QTabBar::tab:selected {
-    background: #303030;
+    background: #E8F5E9;
+    border-bottom: none;
+}
+QTabBar::tab:hover:!selected {
+    background: #A5D6A7;
 }
 QTableWidget {
-    background-color: #202020;
-    gridline-color: #AAAAAA;
-    color: #FFFFFF;
+    background-color: #FFFFFF;
+    gridline-color: #C8E6C9;
+    color: #1B5E20;
+    alternate-background-color: #F1F8E9;
 }
 QTableWidget QHeaderView::section {
-    background-color: #505050;
+    background-color: #C8E6C9;
     padding: 4px;
-    border: 1px solid #AAAAAA;
+    border: 1px solid #A5D6A7;
+    color: #1B5E20;
 }
-QFrame.lesson-frame {
-    background-color: #303030;
-    border: 1px solid #AAAAAA;
+QTableWidget::item:selected {
+    background-color: #A5D6A7;
+    color: #1B5E20;
+}
+QListWidget {
+    background-color: #FFFFFF;
+    alternate-background-color: #F1F8E9;
+    color: #1B5E20;
+    border: 1px solid #C8E6C9;
+    border-radius: 4px;
+}
+QListWidget::item {
+    padding: 5px;
+    color: #1B5E20;
+}
+QListWidget::item:selected {
+    background-color: #A5D6A7;
+    color: #1B5E20;
+}
+QListWidget::item:hover {
+    background-color: #C8E6C9;
+}
+QCheckBox {
+    spacing: 8px;
+    color: #1B5E20;
+}
+QCheckBox::indicator {
+    width: 18px;
+    height: 18px;
+    border-radius: 9px;
+    border: 2px solid #81C784;
+    background-color: #FFFFFF;
+}
+QCheckBox::indicator:checked {
+    background-color: #4CAF50;
+    border-color: #2E7D32;
+}
+QCheckBox::indicator:unchecked:hover {
+    background-color: #C8E6C9;
+}
+QCheckBox::indicator:checked:hover {
+    background-color: #66BB6A;
+}
+QRadioButton {
+    spacing: 8px;
+    color: #1B5E20;
+}
+QRadioButton::indicator {
+    width: 18px;
+    height: 18px;
+    border-radius: 9px;
+    border: 2px solid #81C784;
+    background-color: #FFFFFF;
+}
+QRadioButton::indicator:checked {
+    background-color: #4CAF50;
+    border-color: #2E7D32;
+}
+QRadioButton::indicator:hover {
+    background-color: #C8E6C9;
+}
+QGroupBox {
+    border: 1px solid #C8E6C9;
     border-radius: 5px;
+    margin-top: 10px;
+    padding-top: 10px;
+    color: #1B5E20;
+}
+QGroupBox::title {
+    subcontrol-origin: margin;
+    left: 10px;
+    padding: 0 5px 0 5px;
+    background-color: #E8F5E9;
+    color: #1B5E20;
+}
+QLabel.xp-label {
+    color: #2E7D32;
+    font-weight: bold;
 }
 QLabel.status-label {
-    color: #AAAAAA;
+    color: #2E7D32;
+    font-weight: bold;
 }
+
 ```
 
 gui/styles/themes/dark_reactive.qss ```
@@ -2473,8 +2574,7 @@ class FriendsWindow(QWidget):
 
             friend_frame = QFrame()
             friend_frame.setStyleSheet("""
-                background-color: #303030;
-                border: 1px solid #999;
+                border: 1px solid;
             """)
             friend_frame.setFixedHeight(40)
 
@@ -2519,8 +2619,7 @@ class FriendsWindow(QWidget):
 
             request_frame = QFrame()
             request_frame.setStyleSheet("""
-                background-color: #303030;
-                border: 1px solid #aaa;
+                border: 1px solid;
             """)
             request_frame.setFixedHeight(40)
 
@@ -2873,12 +2972,12 @@ class LessonListWindow(QWidget):
 
         # Номер урока
         num_label = QLabel(f"{lesson.order_index+1}.")
-        num_label.setStyleSheet("font-size: 16px; font-weight: bold; color: white;")
+        num_label.setStyleSheet("font-size: 16px; font-weight: bold;")
         num_label.setFixedWidth(30)
 
         # Название
         name_label = QLabel(title)
-        name_label.setStyleSheet("font-size: 14px; color: white;")
+        name_label.setStyleSheet("font-size: 14px;")
 
         # Статус
         if progress:
@@ -2948,7 +3047,7 @@ from services.task_service import TaskService
 from services.progress_service import ProgressService
 from gui.widgets.task_widgets import create_task_widget
 from gui.widgets.molecule_widget import MoleculeWidget
-from database.models.content import LessonVersion
+from database.models.content import Lesson
 from database.models.progress import TaskAttempt, UserLessonProgress
 from services.currency_service import CurrencyService
 from services.achievement_service import AchievementService
@@ -3243,6 +3342,16 @@ class LessonWindow(QWidget):
             lesson_progress.status = 'completed'
             lesson_progress.completed_at = func.now()
             track_progress.total_xp += self.active_version.xp_reward
+            self.db.commit()
+
+            next_lesson = self.db.query(Lesson).filter(
+                Lesson.track_id == self.track.id,
+                Lesson.order_index > self.lesson.order_index
+            ).order_by(Lesson.order_index).first()
+            if next_lesson:
+                track_progress.current_lesson_index = next_lesson.order_index
+            else:
+                track_progress.current_lesson_index = self.lesson.order_index
             self.db.commit()
 
             # ---------- Геймификация ----------
@@ -3752,13 +3861,17 @@ class ProfileSettingsWindow(QWidget):
             cb = QPushButton(f"{ua.achievement.name} {'✅' if ua.is_displayed else '❌'}")
             cb.setCheckable(True)
             cb.setChecked(ua.is_displayed)
-            cb.clicked.connect(lambda checked, ua=ua: self.toggle_achievement_display(ua.id, checked))
+            cb.ua_id = ua.id
+            cb.achievement_name = ua.achievement.name
+            cb.clicked.connect(lambda checked, cb=cb: self.toggle_achievement_display(cb, checked))
             layout.addWidget(cb)
         widget.setLayout(layout)
         return widget
 
-    def toggle_achievement_display(self, ua_id, show):
-        self.ach_svc.toggle_display(self.user.id, ua_id, show)
+    def toggle_achievement_display(self, button, checked):
+        self.ach_svc.toggle_display(self.user.id, button.ua_id, checked)
+        button.setText(f"{button.achievement_name} {'✅' if checked else '❌'}")
+        button.setChecked(checked)
 
     def back_to_profile(self):
         from gui.windows.profile_window import ProfileWindow
@@ -3769,7 +3882,7 @@ class ProfileSettingsWindow(QWidget):
 
 gui/windows/profile_window.py ```
 from PyQt6.QtWidgets import (
-    QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout, QScrollArea, QFrame, QMessageBox
+    QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout, QScrollArea, QFrame, QSizePolicy
 )
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QPixmap
@@ -3861,7 +3974,7 @@ class ProfileWindow(QWidget):
             slot_widget = QWidget()
             slot_layout = QVBoxLayout()
             slot_widget.setFixedSize(80, 80)
-            slot_widget.setStyleSheet("background-color: #202020; border: 1px solid gray;")
+            slot_widget.setStyleSheet("border: 1px solid;")
             if slot_num in slots:
                 art_inv = slots[slot_num]
                 icon_label = QLabel()
@@ -3899,8 +4012,10 @@ class ProfileWindow(QWidget):
         else:
             for ua in displayed:
                 frame = QFrame()
-                frame.setFixedSize(70, 70)
-                frame.setStyleSheet("background-color: #202020; border: 1px solid gold;")
+                frame.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Minimum)
+                frame.setMinimumHeight(70)
+                frame.setMaximumWidth(200)
+                frame.setStyleSheet("border: 2px solid #81C784;")
                 lbl = QLabel(ua.achievement.name)
                 lbl.setWordWrap(True)
                 lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -3963,6 +4078,8 @@ def validate_email(email: str) -> bool:
         dns.resolver.resolve(domain, "MX")
         return True
     except:
+        if domain in ['mail.ru', 'yandex.ru', 'list.ru', 'gmail.com']:
+            return True
         return False
 
 class RegisterWindow(QWidget):
@@ -4220,10 +4337,9 @@ class TrackSelectionWindow(QWidget):
         # Информация о треке
         info_layout = QVBoxLayout()
         name_label = QLabel(track.name)
-        name_label.setStyleSheet("font-size: 16px; font-weight: bold; color: white;")
+        name_label.setStyleSheet("font-size: 16px; font-weight: bold;")
         desc_label = QLabel(track.description or "")
         desc_label.setWordWrap(True)
-        desc_label.setStyleSheet("color: #ccc;")
 
         # Прогресс
         if progress:
@@ -4235,7 +4351,6 @@ class TrackSelectionWindow(QWidget):
         else:
             progress_text = "Новый трек"
         progress_label = QLabel(progress_text)
-        progress_label.setStyleSheet("color: #aaa;")
 
         info_layout.addWidget(name_label)
         info_layout.addWidget(desc_label)
@@ -5229,7 +5344,14 @@ class StatisticsService:
                 UserTopicStats.topic_tag == tag
             ).first()
             if not stats:
-                stats = UserTopicStats(user_id=user_id, topic_tag=tag)
+                stats = UserTopicStats(
+                    user_id=user_id,
+                    topic_tag=tag,
+                    total_attempts = 0,
+                    correct_attempts = 0,
+                    current_streak = 0,
+                    max_streak = 0
+                    )
                 self.db.add(stats)
 
             if stats.total_attempts:
@@ -5674,15 +5796,19 @@ from PyQt6.QtWidgets import QApplication
 from database.init_db import init_db
 from database.seed import seed_data
 from database.db import SessionLocal
+from gui.styles.theme_manager import apply_theme
 
 from gui.windows.login_window import LoginWindow
 
 
 def main():
     init_db()
-    # seed_data()
+    seed_data()
     
     app = QApplication(sys.argv)
+
+    apply_theme('classic')
+
     db_session = SessionLocal()
 
     window = LoginWindow(db_session=db_session)
