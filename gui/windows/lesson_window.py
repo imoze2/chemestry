@@ -8,6 +8,7 @@ from PyQt6.QtGui import QPixmap
 from sqlalchemy import func
 
 from basedir import resource_path
+from gui.windows.base_window import BaseWindow
 from database.db import SessionLocal
 from services.lesson_service import LessonService
 from services.task_service import TaskService
@@ -23,9 +24,9 @@ from services.leaderboard_service import LeaderboardService
 from services.statistics_service import StatisticsService
 
 
-class LessonWindow(QWidget):
+class LessonWindow(BaseWindow):
     def __init__(self, user, track, lesson, db_session):
-        super().__init__()
+        super().__init__("lesson")
         self.user = user
         self.track = track
         self.lesson = lesson
@@ -44,7 +45,7 @@ class LessonWindow(QWidget):
         self.task_widgets = {}   # кеш виджетов заданий (опционально)
 
         self.setWindowTitle(f"Урок: {self.active_version.title}")
-        self.setFixedSize(800, 600)
+        self.setMinimumSize(500, 400)
         self.init_ui()
 
     def init_ui(self):
@@ -150,9 +151,11 @@ class LessonWindow(QWidget):
 
     def back_to_lessons(self):
         from gui.windows.lesson_list_window import LessonListWindow
-        self.lesson_list = LessonListWindow(self.user, self.track, self.db)
-        self.lesson_list.show()
+        current_geo = self.geometry()
         self.close()
+        self.lesson_list = LessonListWindow(self.user, self.track, self.db)
+        self.lesson_list.setGeometry(current_geo)
+        self.lesson_list.show()
 
     def setup_practice_tab(self):
         """Настраивает вкладку «Практика»."""

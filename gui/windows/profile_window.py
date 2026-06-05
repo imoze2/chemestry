@@ -4,19 +4,20 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QPixmap
 import os
+from gui.windows.base_window import BaseWindow
 from services.currency_service import CurrencyService
 from services.shop_service import ShopService
 from services.achievement_service import AchievementService  # нужно добавить метод get_user_achievements
 
-class ProfileWindow(QWidget):
+class ProfileWindow(BaseWindow):
     def __init__(self, user, db_session):
-        super().__init__()
+        super().__init__("profile")
         self.user = user
         self.db = db_session
         self.shop_svc = ShopService(self.db)
         self.ach_svc = AchievementService(self.db)
         self.setWindowTitle("Профиль")
-        self.setFixedSize(700, 700)
+        self.setMinimumSize(500, 400)
         self.init_ui()
 
     def init_ui(self):
@@ -145,24 +146,32 @@ class ProfileWindow(QWidget):
     
     def open_settings(self):
         from gui.windows.profile_settings_window import ProfileSettingsWindow
-        self.settings_win = ProfileSettingsWindow(self.user, self.db)
-        self.settings_win.show()
+        current_geo = self.geometry()
         self.close()
+        self.settings_win = ProfileSettingsWindow(self.user, self.db)
+        self.settings_win.setGeometry(current_geo)
+        self.settings_win.show()
     
     def open_store(self):
         from gui.windows.store_window import StoreWindow
-        self.store = StoreWindow(self.user, self.db)
-        self.store.show()
+        current_geo = self.geometry()
         self.close()
+        self.store = StoreWindow(self.user, self.db)
+        self.store.setGeometry(current_geo)
+        self.store.show()
 
     def back_to_menu(self):
         from gui.windows.main_window import MainMenuWindow
-        self.menu = MainMenuWindow(self.user, self.db)
-        self.menu.show()
+        current_geo = self.geometry()
         self.close()
+        self.menu = MainMenuWindow(self.user, self.db)
+        self.menu.setGeometry(current_geo)
+        self.menu.show()
 
     def open_friends(self):
         from gui.windows.friends_window import FriendsWindow
-        self.friends_win = FriendsWindow(self.user, self.db)
-        self.friends_win.show()
+        current_geo = self.geometry()
         self.close()
+        self.friends_win = FriendsWindow(self.user, self.db)
+        self.friends_win.setGeometry(current_geo)
+        self.friends_win.show()

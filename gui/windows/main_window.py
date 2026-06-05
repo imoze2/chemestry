@@ -8,18 +8,19 @@ from PyQt6.QtWidgets import (
 
 from PyQt6.QtCore import Qt, QSize
 from PyQt6.QtGui import QIcon
+from gui.windows.base_window import BaseWindow
 
 
-class MainMenuWindow(QWidget):
+class MainMenuWindow(BaseWindow):
 
     def __init__(self, user, db_session):
-        super().__init__()
+        super().__init__("main")
 
         self.user = user
         self.db_session = db_session
 
         self.setWindowTitle("Интерактивная химия | Главное меню")
-        self.setFixedSize(500, 400)
+        self.setMinimumSize(500, 400)
 
         self.init_ui()
 
@@ -72,24 +73,32 @@ class MainMenuWindow(QWidget):
 
     def open_profile(self):
         from gui.windows.profile_window import ProfileWindow
-        self.profile_window = ProfileWindow(self.user, self.db_session)
-        self.profile_window.show()
+        current_geo = self.geometry()
         self.close()
+        self.profile_window = ProfileWindow(self.user, self.db_session)
+        self.profile_window.setGeometry(current_geo)
+        self.profile_window.show()
 
     def open_learning(self):
         from gui.windows.track_selection_window import TrackSelectionWindow
-        self.learning_window = TrackSelectionWindow(self.user, self.db_session)
-        self.learning_window.show()
+        current_geo = self.geometry()
         self.close()
+        self.learning_window = TrackSelectionWindow(self.user, self.db_session)
+        self.learning_window.setGeometry(current_geo)
+        self.learning_window.show()
 
     def open_leaderboard(self):
         from gui.windows.leaderboard_window import LeaderboardWindow
-        self.leaderboard_window = LeaderboardWindow(self.user, self.db_session)
-        self.leaderboard_window.show()
+        current_geo = self.geometry()
         self.close()
+        self.leaderboard_window = LeaderboardWindow(self.user, self.db_session)
+        self.leaderboard_window.setGeometry(current_geo)
+        self.leaderboard_window.show()
 
     def logout(self):
         from gui.windows.login_window import LoginWindow
-        self.login_window = LoginWindow(self.db_session)
-        self.login_window.show()
+        current_geo = self.geometry()
         self.close()
+        self.login_window = LoginWindow(self.db_session)
+        self.login_window.setGeometry(current_geo)
+        self.login_window.show()

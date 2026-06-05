@@ -2,19 +2,20 @@ from PyQt6.QtWidgets import QWidget, QVBoxLayout, QLabel, QPushButton, QScrollAr
 from PyQt6.QtGui import QPixmap, QIcon, QColor
 from PyQt6.QtCore import QSize
 from PyQt6.QtCore import Qt
+from gui.windows.base_window import BaseWindow
 from services.shop_service import ShopService
 import os
 import sys
 from basedir import resource_path
 
-class StoreWindow(QWidget):
+class StoreWindow(BaseWindow):
     def __init__(self, user, db_session):
-        super().__init__()
+        super().__init__("store")
         self.user = user
         self.db = db_session
         self.shop_svc = ShopService(self.db)
         self.setWindowTitle("Магазин")
-        self.setFixedSize(700, 550)
+        self.setMinimumSize(500, 400)
         self.init_ui()
 
     def init_ui(self):
@@ -91,6 +92,8 @@ class StoreWindow(QWidget):
 
     def back_to_profile(self):
         from gui.windows.profile_window import ProfileWindow
-        self.profile = ProfileWindow(self.user, self.db)
-        self.profile.show()
+        current_geo = self.geometry()
         self.close()
+        self.profile = ProfileWindow(self.user, self.db)
+        self.profile.setGeometry(current_geo)
+        self.profile.show()
