@@ -70,6 +70,8 @@ class RegisterWindow(BaseWindow):
         back_button.setFlat(True)
         back_button.clicked.connect(self.back_to_login)
 
+        layout.addStretch()
+        
         layout.addWidget(title)
         layout.addWidget(self.username_input)
         layout.addWidget(self.email_input)

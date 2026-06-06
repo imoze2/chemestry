@@ -55,6 +55,8 @@ class LoginWindow(BaseWindow):
         register_button.setFlat(True)
         register_button.clicked.connect(self.open_register)
 
+        layout.addStretch()
+        
         layout.addWidget(title)
         layout.addWidget(self.username_input)
         layout.addWidget(self.password_input)

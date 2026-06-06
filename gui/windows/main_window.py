@@ -9,6 +9,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, QSize
 from PyQt6.QtGui import QIcon
 from gui.windows.base_window import BaseWindow
+from basedir import resource_path
 
 
 class MainMenuWindow(BaseWindow):
@@ -32,7 +33,7 @@ class MainMenuWindow(BaseWindow):
         top_layout.addStretch()
 
         profile_button = QPushButton("Профиль")
-        profile_button.setIcon(QIcon("C:\\0.0.Diploma2\\profile.png"))
+        profile_button.setIcon(QIcon(resource_path("profile.png")))
         profile_button.setIconSize(QSize(32,32))
         profile_button.clicked.connect(self.open_profile)
 
