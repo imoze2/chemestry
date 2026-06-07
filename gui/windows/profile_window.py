@@ -46,7 +46,7 @@ class ProfileWindow(BaseWindow):
         if avatar_inv and avatar_inv.item_type.icon_url:
             pix = QPixmap(avatar_inv.item_type.icon_url)
         else:
-            pix = QPixmap("C:\\0.0.Diploma2\\profile.png")
+            pix = QPixmap(resource_path("profile.png"))
         avatar_label.setPixmap(pix.scaled(80, 80, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
         avatar_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(avatar_label)

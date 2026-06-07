@@ -103,7 +103,7 @@ class RegisterWindow(BaseWindow):
             QMessageBox.information(self, "Success", message)
             current_geo = self.geometry()
             self.close()
-            self.login_window = LoginWindow(self.db_session, self.db_session)
+            self.login_window = LoginWindow(self.db_session)
             self.login_window.setGeometry(current_geo)
             self.login_window.show()
 
